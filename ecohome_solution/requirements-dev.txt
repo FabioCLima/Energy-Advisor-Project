@@ -1,0 +1,16 @@
+# ── Development + test dependencies ─────────────────────────────────
+# Install with: pip install -r requirements-dev.txt
+# (already includes all runtime deps via the line below)
+
+-r requirements.txt
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+
+# Linting and formatting
+ruff>=0.6.9
+
+# Jupyter notebooks (development only)
+jupyter>=1.0.0
+ipykernel>=6.25.2

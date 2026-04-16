@@ -1,0 +1,22 @@
+[project]
+name = "energy-advisor"
+version = "0.1.0"
+description = "EcoHome Energy Advisor — AI-powered smart-home energy optimization agent"
+requires-python = ">=3.12"
+readme = "ecohome_solution/README.md"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["ecohome_solution/tests"]
+asyncio_mode = "auto"

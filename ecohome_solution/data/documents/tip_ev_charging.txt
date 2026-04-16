@@ -1,0 +1,33 @@
+Electric Vehicle Charging Optimization Guide
+
+Choosing the right time and method to charge your EV can save hundreds of dollars per year and reduce grid strain during peak hours.
+
+Time-of-Use Charging Strategy:
+- The cheapest time to charge from the grid is during off-peak hours, typically 11 PM to 6 AM, when rates are 30–50% lower than peak hours.
+- Peak hours (typically 5 PM–9 PM) carry the highest rates. Avoid charging during this window unless necessary.
+- Use your EV's built-in scheduling function to set a departure time; the car will start charging automatically at the optimal hour.
+
+Solar-Aligned Charging:
+- If you have solar panels, charge between 10 AM and 2 PM to use free solar energy directly.
+- Set a minimum state of charge (e.g., 20%) overnight via grid at off-peak rates, then top up from solar during the day.
+- A 7 kW home charger can add roughly 25–35 km of range per hour. A 4-hour solar window adds 100–140 km.
+
+Level 1 vs Level 2 Charging:
+- Level 1 (standard 120V outlet): adds ~6–8 km per hour. Sufficient for low daily mileage (<50 km/day).
+- Level 2 (240V dedicated circuit): adds 25–40 km per hour. Required for daily commuters or larger battery vehicles.
+- DC fast charging at public stations is the most expensive per kWh — use sparingly for long trips.
+
+Battery Health and Longevity:
+- Avoid charging above 80% for daily use. Full charges (100%) should be reserved for long trips.
+- Do not allow the battery to drop below 10% regularly. Keeping it between 20–80% extends battery life significantly.
+- Extreme temperatures (below 0°C or above 35°C) reduce charging efficiency by 10–30%.
+
+Smart Charging and Demand Response:
+- Some utilities offer EV-specific rates (e.g., $0.05/kWh overnight) in exchange for allowing limited charge interruptions.
+- Vehicle-to-Home (V2H) technology allows your EV battery to power your home during outages or peak hours.
+- Smart chargers (e.g., ChargePoint, Wallbox) integrate with home energy systems and adjust charge rate based on solar output and grid pricing.
+
+Cost Estimation:
+- Average EV consumes 0.18–0.25 kWh per km.
+- At $0.12/kWh average rate: 15,000 km/year costs approximately $324–$450 in electricity.
+- Shifting 80% of charging to off-peak ($0.09/kWh) reduces annual cost to approximately $243–$337.
