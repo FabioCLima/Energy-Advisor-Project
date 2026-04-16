@@ -11,18 +11,36 @@ ecohome_solution/
 ├── 01_db_setup.ipynb
 ├── 02_rag_setup.ipynb
 ├── 03_run_and_evaluate.ipynb
-├── agent.py
-├── tools.py
-├── requirements.txt
-├── models/
-│   ├── __init__.py
-│   └── energy.py
+├── main.py                      ← CLI entrypoint
+├── requirements.txt             ← runtime deps
+├── requirements-dev.txt         ← dev/test deps
+├── energy_advisor/              ← main Python package
+│   ├── agent.py                 ← LangGraph ReAct agent
+│   ├── config.py                ← Pydantic-settings config
+│   ├── schemas.py               ← Pydantic v2 schemas
+│   ├── prompts.py               ← system prompt
+│   ├── logging.py               ← loguru setup
+│   ├── tools/                   ← LangChain tools
+│   │   ├── weather.py
+│   │   ├── pricing.py
+│   │   ├── energy_data.py
+│   │   ├── rag.py
+│   │   └── savings.py
+│   ├── services/                ← business logic
+│   │   ├── database.py          ← SQLAlchemy models + DB manager
+│   │   ├── forecasting.py
+│   │   ├── pricing.py
+│   │   ├── recommendations.py
+│   │   └── retrieval.py
+│   └── bootstrap/               ← one-time setup scripts
+│       ├── db_setup.py
+│       ├── sample_data.py
+│       └── rag_setup.py
+├── tests/                       ← pytest test suite
 └── data/
-    ├── documents/
-    │   ├── tip_device_best_practices.txt
-    │   └── tip_energy_savings.txt
-    ├── energy_data.db
-    └── vectorstore/
+    ├── documents/               ← RAG knowledge base
+    ├── energy_data.db           ← SQLite (generated)
+    └── vectorstore/             ← ChromaDB (generated)
 ```
 
 ## What The Solution Does
@@ -59,6 +77,28 @@ VOCAREUM_API_KEY=your_vocareum_api_key_here
 OPENAI_API_KEY=your_openai_api_key_here
 ```
 
+### Model Switching (Fast vs. Quality)
+
+This project supports easy switching between a cheaper "fast" model and a higher-quality model via environment variables:
+
+```bash
+# Choose preset: fast | quality | custom
+ENERGY_ADVISOR_MODEL_PRESET=fast
+
+# Defaults (override if you want)
+ENERGY_ADVISOR_MODEL_FAST=gpt-5-mini
+ENERGY_ADVISOR_MODEL_QUALITY=gpt-5.2
+
+# If preset=custom, set the exact model name:
+# ENERGY_ADVISOR_MODEL=...
+```
+
+If you are using a Vocareum proxy, set the base URL explicitly:
+
+```bash
+ENERGY_ADVISOR_BASE_URL=https://openai.vocareum.com/v1
+```
+
 ## Run Order
 
 Execute the notebooks in this order:
@@ -67,36 +107,57 @@ Execute the notebooks in this order:
 2. `02_rag_setup.ipynb`
 3. `03_run_and_evaluate.ipynb`
 
-These notebooks assume they are run from within the `ecohome_solution/` directory, where relative paths such as `data/...` and `models/...` resolve correctly.
+These notebooks assume they are run from within the `ecohome_solution/` directory, where relative paths such as `data/...` resolve correctly.
 
 ## Key Files
 
-- `agent.py`: LangGraph agent wrapper and model setup
-- `tools.py`: tool definitions for weather, pricing, database access, RAG, and savings calculations
-- `models/energy.py`: SQLAlchemy models and database manager
+- `energy_advisor/agent.py`: LangGraph ReAct agent wrapper
+- `energy_advisor/tools/`: LangChain tools (weather, pricing, energy_data, rag, savings)
+- `energy_advisor/services/database.py`: SQLAlchemy models and DB manager
+- `energy_advisor/config.py`: Pydantic-settings v2 configuration
 - `data/documents/`: knowledge base files for RAG
+- `main.py`: CLI entrypoint (`python main.py "your question"`)
+
+## Running from the CLI
+
+```bash
+cd ecohome_solution
+python main.py "When should I charge my EV tonight?"
+python main.py "How can I maximise solar self-consumption?" --context "5kW system, San Francisco"
+```
+
+## Running tests
+
+```bash
+cd ecohome_solution
+pytest tests/ -v
+```
 
 ## Dependencies
 
-Dependencies are listed in `requirements.txt`. Current documented local runtime:
+Runtime dependencies are in `requirements.txt`; development and test tools in `requirements-dev.txt`.
 
-- Python `3.12.3`
+Install for development:
 
-Notable packages and pinned versions:
+```bash
+pip install -r requirements-dev.txt
+```
 
-- `langchain==0.1.0`
-- `langchain-openai==0.0.5`
-- `langchain-community==0.0.10`
-- `langgraph==0.0.20`
-- `sqlalchemy==2.0.23`
-- `chromadb==0.4.18`
-- `openai==1.3.0`
-- `pandas==2.1.4`
-- `numpy==1.24.3`
-- `python-dotenv==1.0.0`
-- `jupyter==1.0.0`
-- `pytest==7.4.3`
-- `requests==2.31.0`
+Current documented local runtime: Python `3.12.3`
+
+Notable runtime packages:
+
+- `langchain>=0.3.0`
+- `langchain-openai>=0.2.0`
+- `langchain-community>=0.3.0`
+- `langgraph>=0.2.0`
+- `openai>=1.40.0`
+- `sqlalchemy>=2.0.23`
+- `chromadb>=0.5.0`
+- `pydantic>=2.0.0`
+- `pydantic-settings>=2.0.0`
+- `loguru>=0.7.2`
+- `python-dotenv>=1.0.0`
 
 ## Notes
 

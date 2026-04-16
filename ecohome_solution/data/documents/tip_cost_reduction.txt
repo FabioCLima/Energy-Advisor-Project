@@ -1,0 +1,41 @@
+Electricity Cost Reduction Strategies for Smart Homes
+
+Understanding your electricity bill and the levers available to reduce it is the foundation of effective home energy management.
+
+Understanding Time-of-Use (TOU) Tariffs:
+- TOU tariffs charge different rates depending on the time of day and sometimes the season.
+- Typical structure: Off-peak (~$0.09/kWh), Mid-peak (~$0.13/kWh), Peak (~$0.21/kWh).
+- Shifting just 30% of daily consumption from peak to off-peak hours can reduce electricity bills by 10–18%.
+
+Demand Charge Avoidance:
+- Some commercial and residential tariffs include a demand charge based on your peak 15-minute consumption during the billing period.
+- A single high-draw event (e.g., EV + AC + oven simultaneously) can increase your demand charge for the entire month.
+- Stagger large appliance start times by 15–30 minutes to avoid simultaneous peaks.
+
+High-Impact Appliances to Shift:
+- Electric water heater: Run a timer to heat water during off-peak hours and rely on thermal storage during peak periods.
+- HVAC: Pre-cool or pre-heat your home before peak hours begin. A 2-degree buffer can hold comfort for 1–2 hours without HVAC running.
+- Dishwasher and washing machine: Use delay-start features to run at midnight or during solar peak hours.
+- Pool pump: Run for 6–8 hours during off-peak or solar hours instead of peak hours.
+
+Phantom Load Elimination:
+- Electronics in standby mode (TVs, game consoles, chargers) consume 5–10% of total household electricity.
+- Use smart power strips that cut power to peripherals when the main device is off.
+- Unplug chargers and small appliances when not in use.
+
+ROI Calculations:
+- LED upgrade: Replacing 20 incandescent bulbs (60W) with LEDs (9W) saves ~1 kWh/day. At $0.13/kWh: $47/year. Payback: 3–6 months.
+- Smart thermostat: Average savings of $140–$180/year. Payback: 1–2 years.
+- Solar panels (6 kW system): Generates ~8,000 kWh/year. Saves $960/year at $0.12/kWh. Payback: 7–10 years with incentives.
+- Battery storage (10 kWh): Avoids ~1,200 kWh of peak consumption/year. Saves $144/year at $0.12 peak-to-off-peak differential. Payback: 14–18 years standalone.
+
+Energy Audit Benefits:
+- A professional energy audit identifies the highest-impact improvements for your specific home.
+- Common findings: poor insulation, air leaks around windows/doors, outdated HVAC equipment.
+- DIY audit: walk through the home with an infrared thermometer and check all appliance energy labels.
+
+Behavioural Changes with High Impact:
+- Reduce water heater temperature from 60°C to 49°C: saves 6–10% of water heating costs.
+- Wash clothes in cold water: reduces washing machine energy use by 75–90%.
+- Use natural ventilation in evenings instead of AC when outdoor temperature drops below indoor temperature.
+- Cook multiple meals at once to reduce oven usage frequency.

@@ -1,320 +1,826 @@
 # EcoHome Energy Advisor
 
-## Overview
+## Purpose
 
-EcoHome is building an AI-powered Energy Advisor for smart homes. The goal is to help customers reduce electricity costs, increase the use of solar energy, and improve the efficiency of connected devices such as EV chargers, HVAC systems, appliances, and other smart-home equipment.
+This document is the single source of truth for the **EcoHome Energy Advisor** project.
 
-The solution should analyze current and historical energy data, combine it with external context such as weather and electricity prices, and return recommendations that are practical, personalized, and data-driven.
+It defines:
 
-## Problem Statement
+- the product problem
+- the solution goals
+- the target architecture
+- the development and production operating model
+- the implementation phases
+- the engineering standards and guardrails
 
-Households with solar panels, electric vehicles, and smart devices often have access to large amounts of data, but limited guidance on how to act on it. Customers need an assistant that can interpret this information and answer questions such as:
+This file should evolve during development and remain the main reference for technical and product decisions.
 
-- When should a device run to minimize cost?
-- How can solar generation be used more effectively?
-- What actions would reduce energy waste without sacrificing comfort?
-- How much money and environmental impact could be saved by changing behavior?
+---
 
-The Energy Advisor should do more than provide generic advice. It should reason over real inputs, retrieve relevant facts, and support recommendations with calculations and evidence.
+## 1. Problem Context
 
-## Solution Goal
+EcoHome is building an AI-powered Energy Advisor for smart homes. The goal is to help users reduce electricity costs, increase solar self-consumption, and improve the efficiency of connected devices such as EV chargers, HVAC systems, appliances, and other smart-home equipment.
+
+The system should answer questions such as:
+
+- When should I charge my electric car to minimize cost and maximize solar power?
+- How can I better use solar generation throughout the day?
+- Which devices should run during off-peak windows?
+- How much money can I save by changing my routine?
+- What actions should I take based on my historical energy usage?
+
+The solution must not behave like a generic chatbot. It should act as a **data-grounded energy advisor** that uses tools, validates inputs, and generates explainable recommendations.
+
+---
+
+## 2. Solution Goal
 
 Build an intelligent agent that can:
 
-- Analyze energy consumption patterns and solar generation trends
-- Recommend optimal times to run household devices
-- Incorporate weather forecasts and dynamic electricity pricing into decisions
-- Retrieve supporting guidance from an energy-efficiency knowledge base
-- Estimate savings, tradeoffs, and environmental impact
+- analyze energy consumption patterns and solar generation trends
+- recommend optimal times to run household devices
+- incorporate weather forecasts and dynamic electricity pricing into decisions
+- retrieve supporting guidance from an energy-efficiency knowledge base
+- estimate savings, tradeoffs, and environmental impact
 
-## Core Capabilities
+The final deliverable should be implemented under `ecohome_solution/`.
+
+---
+
+## 3. Core Capabilities
 
 The system is expected to support the following capabilities:
 
 - **Multi-tool reasoning**
-  - Use tools for weather forecasts, electricity prices, energy usage queries, and solar generation data
+  - weather forecasts
+  - electricity prices
+  - energy usage queries
+  - solar generation queries
 - **Historical analysis**
-  - Review past household behavior to personalize recommendations
+  - review past household behavior to personalize recommendations
 - **RAG-based knowledge retrieval**
-  - Retrieve energy-saving strategies and best practices from a curated document set
+  - retrieve best practices and energy-saving guidance from curated documents
 - **Cost optimization**
-  - Consider pricing windows, expected solar production, and device flexibility
+  - use pricing windows, forecasted solar production, and device flexibility
 - **Savings estimation**
-  - Quantify potential cost reduction, energy efficiency gains, and possible ROI
+  - quantify cost reduction, efficiency gains, and possible ROI
 
-## Inputs
+---
 
-The Energy Advisor should work with these input sources:
+## 4. Inputs and Outputs
 
-- Energy usage data
-  - Device-level or household-level consumption, costs, timestamps, and usage patterns
-- Solar generation data
-  - Production history and conditions affecting solar output
-- Weather forecasts
-  - Temperature, cloud cover, sunlight conditions, and other forecast indicators
-- Electricity pricing data
-  - Time-of-use or dynamic pricing signals
-- Knowledge base documents
-  - Energy-saving guidance, operational tips, and optimization practices
-- User questions
-  - Natural-language requests about scheduling, savings, usage behavior, and optimization
+### Inputs
 
-## Expected Deliverable
+- energy usage data
+- solar generation data
+- weather forecasts
+- electricity pricing data
+- knowledge base documents
+- natural-language user questions
 
-Develop a LangGraph-based agent system that can:
+### Expected outputs
 
-- Understand user energy optimization questions
-- Select and call the right tools for the request
-- Retrieve relevant historical and contextual data
-- Use RAG to ground answers in energy-saving guidance
-- Return personalized recommendations with clear reasoning
-- Estimate savings and environmental impact when possible
+Each response should aim to include:
 
-All implementation artifacts should be submitted under `ecohome_solution/`. The starter content in `ecohome_starter/` is only a reference and should not be treated as the final submission target.
+- a primary recommendation
+- a concise explanation grounded in data
+- an estimated savings or impact statement when applicable
+- supporting best-practice guidance when relevant
+- explicit assumptions or limitations when data is incomplete
 
-## Setup Requirements
+---
 
-Before developing the agent:
+## 5. Architecture Principles
 
-1. Run `ecohome_solution/01_db_setup.ipynb` to initialize the database and populate sample energy usage and solar generation data.
-2. Run `ecohome_solution/02_rag_setup.ipynb` to configure the RAG pipeline.
-3. Expand the knowledge base by adding at least five additional documents under `ecohome_solution/data/documents/`.
+The project should follow these principles:
 
-Recommended knowledge-base coverage:
+### 5.1 Separation of concerns
 
-- HVAC optimization strategies
-- Smart home automation tips
-- Renewable energy integration
-- Seasonal energy management
-- Energy storage optimization
+- agent orchestration should not contain raw data-access logic
+- tools should stay thin and delegate logic to services
+- business rules should live in services
+- schemas should define contracts between layers
+- environment configuration should live in config
 
-## Agent Development Tasks
+### 5.2 Notebook-first for learning, script-first for production
 
-Review the existing project files, especially `ecohome_solution/tools.py` and `ecohome_solution/agent.py`, then enhance the solution with:
+Notebooks are useful for:
 
-- Clear and comprehensive system instructions for the Energy Advisor
-- Reliable tool-use orchestration
-- Error handling for missing or inconsistent data
-- Context-aware reasoning based on household history and current conditions
-- Transparent, evidence-based recommendations
+- local exploration
+- demos
+- debugging
+- manual evaluation
 
-The agent should then be tested and evaluated with the scenarios in `ecohome_solution/03_run_and_evaluate.ipynb`.
+But production setup and recurring operations must run through reusable Python modules and scriptable entrypoints.
 
-## Key Features To Implement
+### 5.3 Validation at boundaries
 
-- Weather-aware planning for solar optimization
-- Dynamic pricing-aware scheduling
-- Historical consumption analysis
-- Retrieval-augmented recommendation generation
-- Multi-device optimization across EVs, HVAC, appliances, and solar systems
-- Savings and ROI calculations
+Use Pydantic to validate:
 
-## Example User Questions
+- environment variables
+- tool inputs
+- tool outputs
+- recommendation payloads
 
-The final system should be able to answer questions such as:
+### 5.4 Observability by default
 
-- "When should I charge my electric car tomorrow to minimize cost and maximize solar power?"
-- "What temperature should I set my thermostat on Wednesday afternoon if electricity prices spike?"
-- "Suggest three ways I can reduce energy use based on my usage history."
-- "How much can I save by running my dishwasher during off-peak hours?"
-- "What's the best time to run my pool pump this week based on the weather forecast?"
+Use Loguru for structured application logging and optionally LangSmith for tracing agent execution.
 
-## Proposed Solution Architecture
+### 5.5 Production-aware design
 
-### 1. User Interaction Layer
+Even if the first release is local, the architecture should anticipate:
 
-This layer receives the user's question and returns a final response.
+- future HTTP API exposure
+- external data providers
+- scheduled refresh jobs
+- stronger evaluation and monitoring
 
-**Responsibilities**
+---
 
-- Accept natural-language queries
-- Track conversational context
-- Pass the request to the orchestration layer
-- Return recommendations in a clear, user-friendly format
+## 6. Target Architecture
 
-### 2. Agent Orchestration Layer
+The system should be organized into six layers.
 
-This is the core decision-making layer, implemented with LangGraph.
+### 6.1 Interaction Layer
 
-**Responsibilities**
+Responsible for receiving user requests and returning responses.
 
-- Classify the user request
-- Decide which tools and data sources are required
-- Coordinate sequential or conditional tool calls
-- Combine structured data with retrieved knowledge
-- Generate the final recommendation
+Examples:
 
-**Suggested internal nodes**
+- notebooks
+- local CLI
+- future HTTP API
 
-- Intent analysis node
-- Tool selection node
-- Data retrieval node
-- RAG retrieval node
-- Recommendation and calculation node
-- Response formatting node
+Responsibilities:
 
-### 3. Tooling and Data Access Layer
+- accept natural-language queries
+- pass inputs to the agent package
+- display readable final answers
 
-This layer exposes the operational tools the agent can call.
+### 6.2 Agent Orchestration Layer
 
-**Recommended tools**
+Implemented with LangGraph.
 
-- Energy usage query tool
-- Solar generation query tool
-- Weather forecast tool
-- Electricity pricing tool
-- Savings calculation tool
-- Emissions or environmental impact estimation tool
+Responsibilities:
 
-**Responsibilities**
+- identify user intent
+- determine which tools are required
+- coordinate sequential or conditional tool calls
+- combine structured results and RAG results
+- produce the final recommendation
 
-- Normalize outputs into a consistent schema
-- Validate parameters before execution
-- Handle exceptions and fallback behavior
+### 6.3 Tooling Layer
 
-### 4. Knowledge Retrieval Layer
+Exposes the operational tools the agent can call.
 
-This layer supports retrieval-augmented generation.
+Examples:
 
-**Components**
+- weather forecast tool
+- electricity pricing tool
+- energy usage query tool
+- solar generation query tool
+- savings calculation tool
+- RAG search tool
 
-- Document ingestion pipeline
-- Embedding generation
-- Vector store or retriever
-- Citation-aware retrieval logic
+Responsibilities:
 
-**Responsibilities**
+- validate inputs
+- call services
+- return structured outputs
+- handle errors consistently
 
-- Store energy-saving guidance and best practices
-- Retrieve relevant documents for the user query
-- Provide grounded advice alongside live data analysis
+### 6.4 Service Layer
 
-### 5. Data Storage Layer
+Contains reusable business logic.
 
-This layer stores historical and reference data used by the system.
+Examples:
 
-**Recommended stores**
+- synthetic forecast generation
+- pricing schedule generation
+- savings estimation
+- retrieval orchestration
+- recommendation assembly
 
-- Relational or lightweight analytical database for household energy and solar history
-- Vector database for RAG documents
-- Optional cache for frequent queries such as forecasts or pricing windows
+Responsibilities:
 
-### 6. Evaluation and Monitoring Layer
+- keep tools thin
+- centralize domain rules
+- improve testability
 
-This layer helps validate quality and maintain reliability.
+### 6.5 Storage Layer
 
-**Responsibilities**
+Stores:
 
-- Evaluate answer quality using notebook scenarios
-- Track tool failures and retrieval quality
-- Measure recommendation accuracy and savings consistency
-- Log agent decisions for debugging and improvement
+- SQLite database for energy usage and solar generation
+- ChromaDB vector store for RAG documents
 
-## End-to-End Flow
+### 6.6 Observability and Evaluation Layer
 
-1. The user submits a question.
-2. The LangGraph agent identifies the task type.
-3. The agent calls the required tools for usage history, solar generation, pricing, and weather.
-4. If helpful, the agent retrieves supporting guidance from the knowledge base.
-5. The agent calculates savings, compares options, and builds a recommendation.
-6. The final answer is returned with practical actions and supporting rationale.
+Responsibilities:
 
-## Architecture Diagram
+- structured logs
+- optional LangSmith tracing
+- evaluation scenarios
+- failure analysis and debugging
 
-```text
-User
-  |
-  v
-User Interface / API
-  |
-  v
-LangGraph Orchestrator
-  |------> Energy Usage Tool ------> Historical Energy DB
-  |------> Solar Data Tool --------> Solar Generation DB
-  |------> Weather Tool -----------> Forecast Provider
-  |------> Pricing Tool -----------> Electricity Pricing Source
-  |------> RAG Retriever ----------> Vector Store / Knowledge Base
-  |
-  v
-Recommendation + Savings Engine
-  |
-  v
-Final Personalized Response
+---
+
+## 7. Architecture Flows
+
+### 7.1 End-to-End Runtime Flow
+
+```mermaid
+flowchart TD
+    A[User Question] --> B[Interaction Layer]
+    B --> C[EnergyAdvisorAgent]
+    C --> D[Intent Analysis]
+    D --> E[Structured Data Tools]
+    D --> F[External Context Tools]
+    D --> G[Knowledge Retrieval Tool]
+    E --> H[(SQLite Energy DB)]
+    F --> I[Weather and Pricing Services]
+    G --> J[(ChromaDB Vector Store)]
+    H --> K[Recommendation Builder]
+    I --> K
+    J --> K
+    K --> L[Validated Response Payload]
+    L --> M[Final Personalized Answer]
 ```
 
-## Recommended Non-Functional Requirements
 
-- Clear explanations and interpretable recommendations
-- Graceful handling of missing data
-- Consistent tool output schemas
-- Traceable reasoning with citations where relevant
-- Extensible architecture for new devices and new optimization rules
 
-## Project Plan Enhancements
+### 7.2 Development, Bootstrap, and Runtime Flow
 
-To make the project more impactful and portfolio-ready, consider adding the following enhancements to the implementation roadmap:
+```mermaid
+flowchart LR
+    A[Development Setup] --> B[Notebooks]
+    B --> C[Reusable Package Code]
+    C --> D[Production Bootstrap Scripts]
+    D --> E[Operational Runtime]
+    E --> F[CLI or API]
+    E --> G[Evaluation Jobs]
+    E --> H[Observability]
+```
 
-### 1. Visualization and Reporting
 
-Add reporting and visualization features that help users understand recommendations and system outcomes.
 
-**Suggested additions**
+### 7.3 Internal Decision Flow
 
-- Charts for historical energy usage patterns
-- Solar generation and consumption comparisons
-- Savings projections over time
-- Visual summaries of optimization recommendations
+```mermaid
+flowchart TD
+    A[Receive Question] --> B{Classify Intent}
+    B -->|History| C[Query Usage and Solar Data]
+    B -->|Pricing| D[Query Electricity Pricing]
+    B -->|Forecast| E[Query Weather Forecast]
+    B -->|Best Practices| F[Run RAG Retrieval]
+    C --> G[Assemble Context]
+    D --> G
+    E --> G
+    F --> G
+    G --> H[Estimate Savings and Tradeoffs]
+    H --> I[Build Recommendation]
+    I --> J[Return Final Response with Assumptions]
+```
 
-### 2. User Personalization
 
-Improve the advisor by learning from household behavior and user preferences.
 
-**Suggested additions**
+---
 
-- Preference-aware recommendations
-- Personalization based on historical device usage
-- Comfort-versus-cost tradeoff handling
-- Adaptive optimization strategies for different user profiles
+## 8. Proposed Code Structure
 
-### 3. Integration with External APIs
+The project should evolve from standalone scripts into a package-based architecture.
 
-Extend the solution from a prototype into a more realistic production-style system by using live data sources.
+```text
+ecohome_solution/
+├── energy_advisor/
+│   ├── __init__.py
+│   ├── agent.py
+│   ├── config.py
+│   ├── prompts.py
+│   ├── schemas.py
+│   ├── logging.py
+│   ├── bootstrap/
+│   │   ├── db_setup.py
+│   │   ├── rag_setup.py
+│   │   └── sample_data.py
+│   ├── evaluation/
+│   │   └── run_eval.py
+│   ├── services/
+│   │   ├── forecasting.py
+│   │   ├── pricing.py
+│   │   ├── recommendations.py
+│   │   └── retrieval.py
+│   └── tools/
+│       ├── __init__.py
+│       ├── weather.py
+│       ├── pricing.py
+│       ├── energy_data.py
+│       ├── rag.py
+│       └── savings.py
+├── models/
+├── data/
+├── 01_db_setup.ipynb
+├── 02_rag_setup.ipynb
+├── 03_run_and_evaluate.ipynb
+├── main.py
+├── requirements.txt
+└── README.md
+```
 
-**Suggested additions**
+### Public interface
 
-- Real weather API integration
-- Real electricity pricing API integration
-- Smart home device API integration
-- Support for live data refresh and near-real-time recommendations
+The package should expose a simple interface such as:
 
-### 4. Advanced RAG Techniques
+- `EnergyAdvisorAgent`
+- `invoke(question, context=None)`
 
-Strengthen knowledge retrieval quality to improve the relevance and reliability of recommendations.
+All internal orchestration, services, tools, and configuration should remain encapsulated inside the package.
 
-**Suggested additions**
+---
 
-- Hybrid search combining semantic and keyword retrieval
-- Re-ranking for better document selection
-- Multi-step retrieval and reasoning
-- Improved citation and grounding strategies
+## 9. Development Setup vs Production Bootstrap
 
-### 5. Machine Learning Integration
+This distinction is essential.
 
-Add predictive capabilities to move from reactive recommendations to proactive optimization.
+### 9.1 Development Setup
 
-**Suggested additions**
+This environment exists for:
 
-- Forecasting of household energy usage
-- Prediction of solar generation trends
-- Behavioral pattern modeling
-- Recommendation optimization based on historical outcomes and user behavior
+- learning
+- prototyping
+- debugging
+- manual evaluation
 
-These enhancements are optional but valuable. They can help distinguish the project by demonstrating stronger product thinking, deeper technical scope, and a more production-oriented design.
+Development artifacts:
 
-## Submission Notes
+- `ecohome_solution/01_db_setup.ipynb`
+- `ecohome_solution/02_rag_setup.ipynb`
+- `ecohome_solution/03_run_and_evaluate.ipynb`
+
+Responsibilities:
+
+- initialize the local database
+- ingest base documents into the vector store
+- run manual scenarios
+- inspect outputs and refine prompts or tools
+
+Important rule:
+
+The notebooks should call reusable package code. Business logic must not live only in notebooks.
+
+### 9.2 Production Bootstrap
+
+Production bootstrap is the repeatable setup process that replaces notebook-only initialization.
+
+Required bootstrap processes:
+
+- database initialization
+- sample or operational data loading
+- RAG ingestion and indexing
+- environment validation
+
+Recommended modules:
+
+- `energy_advisor.bootstrap.db_setup`
+- `energy_advisor.bootstrap.rag_setup`
+- `energy_advisor.bootstrap.sample_data`
+
+Example execution model:
+
+```bash
+python -m energy_advisor.bootstrap.db_setup
+python -m energy_advisor.bootstrap.rag_setup
+```
+
+This allows initialization through:
+
+- terminal commands
+- CI/CD pipelines
+- deployment hooks
+- scheduled jobs
+
+### 9.3 Operational Runtime
+
+After bootstrap, the system should run through a stable entrypoint.
+
+Recommended entrypoints:
+
+- `main.py`
+- future `cli.py`
+- future API module
+
+Responsibilities:
+
+- initialize config
+- configure logging
+- build the agent
+- receive user input
+- return results
+
+---
+
+## 10. Guardrails
+
+Guardrails are a required part of the architecture because this is a tool-using LLM system that can otherwise produce recommendations with false confidence.
+
+### 10.1 Input guardrails
+
+- validate date formats
+- validate allowed day ranges and numeric bounds
+- validate optional device types and request fields
+- reject malformed or ambiguous tool inputs when needed
+
+### 10.2 Tool guardrails
+
+- every tool should return a validated schema
+- every failure should produce a predictable `error` field or structured exception handling path
+- tools must never silently invent unavailable data
+- derived values must be clearly marked as estimates
+
+### 10.3 Agent guardrails
+
+- the agent should prefer tools before answering
+- the agent should not make strong recommendations without supporting evidence
+- the agent should explicitly state assumptions when data is missing
+- the agent should distinguish observed facts from inferred guidance
+
+### 10.4 Output guardrails
+
+Responses should aim to separate:
+
+- recommendation
+- reasoning
+- estimated savings
+- supporting tips
+- limitations and assumptions
+
+The agent should not present estimated savings as exact financial truth when they are based on assumptions or synthetic pricing.
+
+---
+
+## 11. Engineering Standards
+
+### 11.1 Pydantic
+
+Use Pydantic for:
+
+- environment settings
+- tool input validation
+- tool output validation
+- agent request and response models
+- recommendation payloads
+
+### 11.2 Loguru
+
+Use Loguru for:
+
+- application startup logs
+- tool execution logs
+- exception logging
+- retrieval events
+- debugging and evaluation flows
+
+### 11.3 Ruff
+
+Use Ruff for:
+
+- linting
+- import organization
+- bug-prone pattern detection
+- consistent style enforcement
+
+Recommended commands:
+
+```bash
+ruff check .
+ruff format .
+```
+
+### 11.4 Testing
+
+At minimum, test:
+
+- config loading
+- database access helpers
+- pricing logic
+- weather generation logic
+- savings calculation
+- retrieval behavior
+- agent bootstrap
+
+---
+
+## 12. Implementation Phases
+
+## Phase 1 - Architecture Foundation
+
+### Objective
+
+Prepare the codebase for a professional refactor before feature expansion.
+
+### Deliverables
+
+- `energy_advisor` package
+- central config module
+- Loguru-based logging module
+- Pydantic schemas
+- Ruff configuration
+
+### Tasks
+
+1. Create the package structure
+2. Move agent construction into `energy_advisor/agent.py`
+3. Create `config.py` with validated environment settings
+4. Create `schemas.py` for structured payloads
+5. Create `logging.py` to standardize logs
+6. Split tools by domain
+7. Add `pyproject.toml` with Ruff configuration
+
+## Phase 2 - Data and Tooling Layer
+
+### Objective
+
+Make tools functional, reliable, and domain-specific.
+
+### Deliverables
+
+- complete weather tool
+- complete electricity pricing tool
+- structured access to energy usage and solar data
+- working savings tool
+- validated tool outputs
+
+### Tasks
+
+1. Implement weather forecasting logic
+2. Implement pricing windows with hourly rates
+3. Refactor DB access into reusable services
+4. Standardize tool outputs with Pydantic models
+5. Add consistent error handling and logging
+
+## Phase 3 - Knowledge Retrieval and RAG
+
+### Objective
+
+Build a retrieval layer that grounds the agent's recommendations.
+
+### Deliverables
+
+- document ingestion pipeline
+- vector store initialization process
+- retrieval service
+- richer knowledge base
+
+### Tasks
+
+1. Expand the document set with at least five additional documents
+2. Create retrieval services for indexing and search
+3. Separate retrieval orchestration from tool decorators
+4. Return sources and relevance metadata
+
+## Phase 4 - Agent Intelligence
+
+### Objective
+
+Make the advisor produce useful, explainable decisions.
+
+### Deliverables
+
+- stronger system prompt
+- structured recommendation flow
+- recommendation builder logic
+- savings-aware and context-aware responses
+
+### Tasks
+
+1. Create explicit prompt instructions
+2. Make the agent prefer tool usage over unsupported assumptions
+3. Consolidate history, solar, pricing, weather, and RAG results
+4. Build a consistent response format
+5. Include limitations and assumptions when data is incomplete
+
+## Phase 5 - Evaluation and Portfolio Hardening
+
+### Objective
+
+Make the project presentable, testable, and portfolio-ready.
+
+### Deliverables
+
+- scripted evaluation
+- unit tests
+- optional LangSmith integration
+- stronger documentation
+
+### Tasks
+
+1. Convert notebook evaluation logic into reusable modules
+2. Add tests for tools, config, calculations, and bootstrap
+3. Add optional LangSmith tracing
+4. Improve README and technical documentation
+5. Prepare a future CLI or API interface
+
+---
+
+## 13. Component Responsibilities
+
+### `config.py`
+
+Purpose:
+
+- centralize environment handling
+- validate required variables
+- configure model and tracing settings
+
+Should contain:
+
+- OpenAI and Vocareum credentials
+- optional LangSmith credentials
+- model name
+- base URL
+- paths for DB and vector store
+
+### `schemas.py`
+
+Purpose:
+
+- define contracts between layers
+- validate inputs and outputs
+
+Recommended models:
+
+- agent request
+- agent response
+- weather response
+- pricing response
+- energy usage response
+- solar generation response
+- RAG result
+- savings result
+
+### `logging.py`
+
+Purpose:
+
+- centralize Loguru configuration
+- unify message formatting
+
+### `services/`
+
+Purpose:
+
+- hold reusable business logic outside tool decorators
+
+Recommended services:
+
+- `forecasting.py`
+- `pricing.py`
+- `retrieval.py`
+- `recommendations.py`
+
+### `tools/`
+
+Purpose:
+
+- expose agent-callable wrappers
+
+Important rule:
+
+Tools should validate input, call services, serialize outputs, and handle errors, but should not become the main home of business logic.
+
+---
+
+## 14. Non-Functional Requirements
+
+- clear explanations and interpretable recommendations
+- graceful handling of missing data
+- consistent tool output schemas
+- traceable reasoning with citations where relevant
+- extensible architecture for new devices and optimization rules
+- maintainable package structure
+- reusable setup and bootstrap process
+
+---
+
+## 15. Portfolio-Ready Enhancements
+
+These are optional but valuable for a stronger portfolio presentation.
+
+### 15.1 Visualization and Reporting
+
+- charts for historical energy usage patterns
+- solar generation and consumption comparisons
+- savings projections over time
+- visual summaries of optimization recommendations
+
+### 15.2 User Personalization
+
+- preference-aware recommendations
+- personalization based on historical device usage
+- comfort-versus-cost tradeoff handling
+- adaptive optimization strategies for different user profiles
+
+### 15.3 External API Integration
+
+- real weather API integration
+- real electricity pricing API integration
+- smart home device API integration
+- support for near-real-time recommendations
+
+### 15.4 Advanced RAG
+
+- hybrid search
+- re-ranking
+- multi-step retrieval and reasoning
+- improved grounding and citation strategies
+
+### 15.5 Machine Learning Integration
+
+- household energy forecasting
+- solar generation prediction
+- behavioral pattern modeling
+- recommendation optimization based on historical outcomes
+
+---
+
+## 16. Risks and Mitigations
+
+### Notebook lock-in
+
+Risk:
+
+Business logic stays trapped in notebooks.
+
+Mitigation:
+
+Move logic into package modules and let notebooks import those modules.
+
+### Tool inconsistency
+
+Risk:
+
+Different tools return incompatible payloads.
+
+Mitigation:
+
+Standardize outputs with Pydantic schemas.
+
+### Opaque agent reasoning
+
+Risk:
+
+The LLM produces plausible but weak recommendations.
+
+Mitigation:
+
+Require tool-backed reasoning and optional RAG grounding.
+
+### Poor observability
+
+Risk:
+
+Debugging becomes difficult.
+
+Mitigation:
+
+Use Loguru and optional LangSmith.
+
+### Overengineering
+
+Risk:
+
+The architecture becomes heavier than needed.
+
+Mitigation:
+
+Keep the package modular and professional, but avoid unnecessary frameworks.
+
+---
+
+## 17. Submission Notes
 
 When submitting the project:
 
-- Place all final artifacts under `ecohome_solution/`
-- Include package names and versions if dependencies were added
-- Share `requirements.txt` and the Python version used if developing locally
+- keep all final artifacts under `ecohome_solution/`
+- include package names and versions if dependencies were added
+- share `requirements.txt` and Python version used locally
+
+---
+
+## 18. Final Target State
+
+At the end of the refactor, the project should have:
+
+- a modular Python package architecture
+- validated config and payloads
+- structured logs
+- optional agent tracing
+- notebook support without notebook dependency
+- clear separation between development setup and production bootstrap
+- reliable tools for energy, solar, pricing, weather, and RAG
+- testable business logic
+- strong portfolio presentation
+
+The notebooks remain useful, but only as a development and demonstration layer.
+
+The real system logic should live in the package.

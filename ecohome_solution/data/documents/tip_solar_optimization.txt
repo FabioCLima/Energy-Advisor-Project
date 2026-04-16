@@ -1,0 +1,32 @@
+Solar Self-Consumption and Optimization Strategies
+
+Solar panels generate the most electricity between 9 AM and 3 PM, with peak output typically around solar noon (12:00–13:00). Aligning high-consumption activities with this window dramatically reduces grid dependency and lowers electricity bills.
+
+Self-Consumption Strategies:
+- Run dishwashers, washing machines, and pool pumps between 10 AM and 2 PM when solar output is highest.
+- Charge electric vehicles during midday hours when you have excess solar generation, rather than overnight from the grid.
+- Use a smart energy monitor to track real-time solar output and automatically shift loads.
+
+Battery Storage:
+- Home batteries (e.g., Tesla Powerwall, Enphase IQ Battery) store excess solar energy generated during the day for use in peak evening hours (18:00–22:00), avoiding the highest electricity rates.
+- Ideal battery capacity is roughly 70–80% of your average daily solar generation.
+- Battery ROI typically ranges from 8–12 years depending on local electricity prices and incentive programs.
+
+Net Metering:
+- Under net metering, excess solar energy exported to the grid earns credits on your bill at a set rate (the feed-in tariff).
+- Net metering policies vary by location. Some utilities offer 1:1 credits; others pay a reduced export rate.
+- Maximising self-consumption is generally more valuable than exporting, especially where feed-in tariffs are low.
+
+Panel Orientation and Tilt:
+- In the northern hemisphere, south-facing panels at a tilt equal to your latitude capture the most annual energy.
+- East-west split installations capture more morning and afternoon light, increasing total self-consumption windows.
+- Shade from trees or buildings during any part of the day can reduce system output by 20–50%.
+
+Monitoring and Maintenance:
+- Clean panels quarterly to remove dust and debris, which can reduce output by 5–15%.
+- Monitor inverter performance monthly. A sudden drop in output often indicates a faulty panel or connection.
+- Most modern systems provide real-time generation data via mobile apps.
+
+Seasonal Variation:
+- Solar generation is typically 2–3 times higher in summer than winter.
+- Adjust appliance scheduling seasonally: maximise daytime use in summer; rely more on off-peak grid hours in winter.
