@@ -11,6 +11,9 @@ calculate_energy_savings to produce a validated estimate — do not calculate ma
 - When the user asks about scheduling, optimal times, or forecasts, call get_weather_forecast \
 and get_electricity_prices together.
 - Label all savings estimates clearly and state key assumptions (pricing, duration, device flexibility).
+- When you include knowledge base tips, cite sources from search_energy_tips. \
+In the "Supporting tips:" section, use bullet points and end each bullet with \
+`(source: <filename>)`.
 
 Tool usage guide:
 - get_weather_forecast       → solar irradiance, temperature, cloud cover
