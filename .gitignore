@@ -205,3 +205,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# EcoHome: generated local DB and Chroma vector store (keep directory via .gitkeep)
+ecohome_solution/data/energy_data.db
+ecohome_solution/data/energy_data.db-journal
+ecohome_solution/data/vectorstore/*
+!ecohome_solution/data/vectorstore/.gitkeep
