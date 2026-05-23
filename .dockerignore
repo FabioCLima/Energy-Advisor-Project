@@ -1,0 +1,32 @@
+# Version control
+.git
+.gitignore
+
+# Python artifacts
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+
+# Virtual environments
+.venv
+venv
+env
+
+# Secrets — NEVER include in image
+.env
+
+# Generated data — mounted as Docker volume
+ecohome_solution/data/
+
+# Development-only files
+*.ipynb
+.ipynb_checkpoints
+ecohome_solution/requirements-dev.txt
+
+# Editor / OS
+.vscode
+.idea
+*.DS_Store
