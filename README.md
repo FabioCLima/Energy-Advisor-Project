@@ -10,7 +10,7 @@
 
 > AI-powered energy advisor for Brazilian households. Ask in natural language: *"Should I charge my Tesla now or wait for solar generation?"* The agent reasons over real consumption data, live weather, and ANEEL tariffs to give a grounded, quantified answer.
 
-![EcoHome Dashboard](../docs/assets/dashboard.png)
+![EcoHome Dashboard](assets/dashboard.png)
 
 ---
 
@@ -19,7 +19,7 @@
 ```bash
 git clone https://github.com/FabioCLima/Energy-Advisor-Project.git
 cd Energy-Advisor-Project
-echo "OPENAI_API_KEY=sk-..." > ecohome_solution/.env
+echo "OPENAI_API_KEY=sk-..." > .env
 docker compose up
 ```
 
@@ -156,7 +156,6 @@ The agent is evaluated in two independent dimensions:
 Run the evaluation pipeline:
 
 ```bash
-cd ecohome_solution
 python -m energy_advisor.evaluation.runner --output eval_report.json
 # Add --quick for 3 scenarios only; --no-judge to skip LLM scoring
 ```
@@ -184,7 +183,7 @@ python -m energy_advisor.evaluation.runner --output eval_report.json
 ## Project Structure
 
 ```
-ecohome_solution/
+Energy-Advisor-Project/
 ├── app/
 │   ├── streamlit_app.py          ← UI entrypoint
 │   └── components/
@@ -217,9 +216,8 @@ ecohome_solution/
 ## Manual Setup
 
 ```bash
-cd ecohome_solution
-
 # Install deps (uv recommended)
+uv venv --python 3.12 && source .venv/bin/activate
 uv pip install -r requirements.txt
 
 # Configure
