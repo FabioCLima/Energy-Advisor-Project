@@ -4,7 +4,8 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-ReAct_Agent-6B48FF?logo=chainlink&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?logo=streamlit&logoColor=white)
 ![Open-Meteo](https://img.shields.io/badge/Open--Meteo-Real_Weather-4CAF50?logo=cloudflarepages&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-37_passed-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-69_passed-brightgreen?logo=pytest&logoColor=white)
+![Coverage](https://img.shields.io/badge/Coverage-87%25-brightgreen?logo=pytest&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
 > AI-powered energy advisor for Brazilian households. Ask in natural language: *"Should I charge my Tesla now or wait for solar generation?"* The agent reasons over real consumption data, live weather, and ANEEL tariffs to give a grounded, quantified answer.
@@ -63,23 +64,54 @@ The LangGraph ReAct agent coordinates **7 specialized tools** and reasons over m
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    User(["👤 User\n(natural language)"])
+    UI["🖥️ Streamlit UI\nDashboard · Chat"]
+    Agent["🤖 EnergyAdvisorAgent\nLangGraph ReAct loop"]
+    LLM["🧠 GPT-4o-mini\nReasoning & tool selection"]
+
+    subgraph Tools["🔧 7 Specialised Tools"]
+        T1["query_energy_usage"]
+        T2["query_solar_generation"]
+        T3["get_electricity_prices"]
+        T4["get_weather_forecast"]
+        T5["search_energy_tips"]
+        T6["calculate_energy_savings"]
+        T7["get_recent_energy_summary"]
+    end
+
+    subgraph Data["💾 Data Layer"]
+        DB[("SQLite\n90 days · per-device")]
+        VS[("ChromaDB\nRAG · 5 docs")]
+        API["Open-Meteo API\nReal solar irradiance"]
+        ANEEL["ANEEL Tariff Table\nBRL · TOU · Bandeiras"]
+    end
+
+    User -->|question| UI
+    UI -->|invoke / stream| Agent
+    Agent <-->|reason + act| LLM
+    Agent -->|tool call| Tools
+    T1 & T2 & T7 --> DB
+    T5 --> VS
+    T4 --> API
+    T3 --> ANEEL
+    T6 --> ANEEL
+    Tools -->|observation| Agent
+    Agent -->|final answer| UI
+    UI -->|rendered response| User
+```
+
 Six-layer design — each layer testable and replaceable independently:
 
-```
-┌─────────────────────────────────────┐
-│  1. Interaction    Streamlit UI      │  Dashboard + Chat tabs
-├─────────────────────────────────────┤
-│  2. Orchestration  EnergyAdvisorAgent│  LangGraph ReAct graph
-├─────────────────────────────────────┤
-│  3. Tools          7 @tool functions │  Isolated, typed, directly testable
-├─────────────────────────────────────┤
-│  4. Services       Business logic    │  database · pricing · forecasting · retrieval
-├─────────────────────────────────────┤
-│  5. Storage        SQLite + ChromaDB │  Time-series records + vector embeddings
-├─────────────────────────────────────┤
-│  6. Observability  Loguru + LangSmith│  Structured logs + optional trace UI
-└─────────────────────────────────────┘
-```
+| Layer | Component | Role |
+|---|---|---|
+| 1. Interaction | Streamlit | Dashboard + streaming chat |
+| 2. Orchestration | LangGraph ReAct | Reason → Act → Observe loop |
+| 3. Tools | 7 `@tool` functions | Isolated, typed, directly testable |
+| 4. Services | Business logic | database · pricing · forecasting · retrieval |
+| 5. Storage | SQLite + ChromaDB | Time-series + vector embeddings |
+| 6. Observability | Loguru + LangSmith | Structured logs + optional trace UI |
 
 **Key decisions:**
 
@@ -125,7 +157,8 @@ Run the evaluation pipeline:
 
 ```bash
 cd ecohome_solution
-jupyter nbconvert --to notebook --execute 03_run_and_evaluate.ipynb
+python -m energy_advisor.evaluation.runner --output eval_report.json
+# Add --quick for 3 scenarios only; --no-judge to skip LLM scoring
 ```
 
 ---
@@ -143,7 +176,7 @@ jupyter nbconvert --to notebook --execute 03_run_and_evaluate.ipynb
 | Dashboard | Streamlit + Plotly |
 | Logging | Loguru (structured) + LangSmith (optional tracing) |
 | Container | Docker + Docker Compose |
-| Tests | pytest · 37 tests across 5 suites |
+| Tests | pytest · 69 tests · 87% coverage on core |
 | Linting | Ruff |
 
 ---
@@ -169,7 +202,7 @@ ecohome_solution/
 │       ├── pricing.py            ← ANEEL TOU + bandeiras tarifárias
 │       ├── recommendations.py    ← Savings calculation engine
 │       └── retrieval.py          ← ChromaDB RAG pipeline
-├── tests/                        ← 37 unit tests
+├── tests/                        ← 69 unit tests (87% coverage)
 ├── data/
 │   ├── documents/                ← RAG knowledge base (5 docs)
 │   ├── energy_data.db            ← SQLite (generated on first run)

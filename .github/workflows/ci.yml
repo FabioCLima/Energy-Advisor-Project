@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: ["feat/**", "master", "main"]
+  pull_request:
+    branches: ["master", "main"]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ecohome_solution
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: |
+          uv pip install -r requirements.txt -r requirements-dev.txt --system
+
+      - name: Lint — ruff
+        run: ruff check energy_advisor/ tests/
+
+      - name: Test — pytest with coverage
+        run: |
+          pytest tests/ \
+            --cov=energy_advisor \
+            --cov-config=pyproject.toml \
+            --cov-report=term-missing \
+            -q
+        env:
+          OPENAI_API_KEY: test-key-placeholder
+          ENERGY_ADVISOR_DB_PATH: /tmp/test_energy.db
+          ENERGY_ADVISOR_DOCS_DIR: data/documents
+          ENERGY_ADVISOR_VECTORSTORE_DIR: /tmp/test_vectorstore

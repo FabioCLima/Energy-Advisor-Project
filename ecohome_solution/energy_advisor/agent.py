@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from datetime import datetime, timedelta
-from typing import Any, Annotated, TypedDict
+from typing import Annotated, Any, TypedDict
 
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
@@ -104,21 +111,13 @@ class EnergyAdvisorAgent:
 
         self.graph = builder.compile()
 
-    def invoke(self, question: str, context: str | None = None) -> dict[str, Any]:
-        """Run the agent on a natural-language question.
-
-        Args:
-            question: The user's question.
-            context: Optional extra context injected as a system message.
-
-        Returns:
-            The LangGraph state dict. Final answer is in result["messages"][-1].content.
-        """
+    def _build_messages(self, question: str, context: str | None) -> list[BaseMessage]:
         now = datetime.now()
         date_context = SystemMessage(
             content=(
                 f"Current date and time: {now.strftime('%Y-%m-%d %H:%M')} (São Paulo, BRT).\n"
-                f"When the user says 'last 30 days', use start_date={( now - timedelta(days=30)).strftime('%Y-%m-%d')}"
+                f"When the user says 'last 30 days', use start_date="
+                f"{(now - timedelta(days=30)).strftime('%Y-%m-%d')}"
                 f" and end_date={now.strftime('%Y-%m-%d')}."
             )
         )
@@ -126,7 +125,45 @@ class EnergyAdvisorAgent:
         if context:
             messages.append(SystemMessage(content=context))
         messages.append(HumanMessage(content=question))
-        return self.graph.invoke({"messages": messages})
+        return messages
+
+    def invoke(self, question: str, context: str | None = None) -> dict[str, Any]:
+        """Run the agent on a natural-language question.
+
+        Returns:
+            The LangGraph state dict. Final answer is in result["messages"][-1].content.
+        """
+        return self.graph.invoke({"messages": self._build_messages(question, context)})
+
+    def stream(self, question: str, context: str | None = None) -> Iterator[str]:
+        """Stream the final response token by token via LangGraph stream_mode='messages'.
+
+        Yields text chunks from the assistant's final answer only — tool-calling
+        intermediate messages are filtered out. Tool names are accumulated in
+        self.last_tools_used as a side effect, readable after the generator is exhausted.
+
+        Args:
+            question: The user's natural-language question.
+            context: Optional extra context injected as a system message.
+
+        Yields:
+            str: Individual text chunks of the final response.
+        """
+        self.last_tools_used: list[str] = []
+        for chunk, metadata in self.graph.stream(  # type: ignore[misc]
+            {"messages": self._build_messages(question, context)},
+            stream_mode="messages",
+        ):
+            if (
+                isinstance(chunk, AIMessageChunk)
+                and chunk.content
+                and not chunk.tool_call_chunks
+                and metadata.get("langgraph_node") == "assistant"
+            ):
+                yield chunk.content
+            elif isinstance(chunk, ToolMessage) and chunk.name:
+                if chunk.name not in self.last_tools_used:
+                    self.last_tools_used.append(chunk.name)
 
     def get_agent_tools(self) -> list[str]:
         """Return the names of all registered tools."""
