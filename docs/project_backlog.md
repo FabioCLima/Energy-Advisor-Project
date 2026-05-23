@@ -79,8 +79,33 @@
 | S2-01 | README reescrito: screenshot, badges, setup em 3 passos, narrativa CAR | `README.md`, `ecohome_solution/README.md`, `docs/assets/dashboard.png` | P0 | ✅ Entregue | `ffa7029` |
 | S2-02 | Script de avaliação standalone: runner + scenarios + relatório JSON | `energy_advisor/evaluation/` | P1 | ✅ Entregue | `6f1ee6d` |
 | S2-03 | Open-Meteo API: substituir `get_weather_forecast` sintético por dados reais de SP | `services/forecasting.py`, `tools/weather.py`, `schemas.py`, `app/components/charts.py` | P1 | ✅ Entregue | `d3f17b7` |
-| S2-04 | Expandir testes: tools e retrieval (cobertura > 70%) | `tests/` | P1 | ⬜ Pendente | — |
-| S2-05 | Deploy no Streamlit Community Cloud (URL pública) | — | P1 | ⬜ Pendente | — |
+| S2-04 | Bill breakdown por controlabilidade + correção de date boundary | `app/components/charts.py`, `app/streamlit_app.py` | P1 | ✅ Entregue | `f0e171c` |
+| S2-05 | Fix deploy: bootstrap RAG + dependência `requests` no Docker | `docker-entrypoint.sh`, `requirements.txt`, `Dockerfile` | P1 | ✅ Entregue | `dc7cece` |
+| S2-06 | Expandir testes: tools e retrieval (cobertura > 70%) | `tests/` | P2 | ⬜ Pendente | — |
+| S2-07 | Deploy dual: Streamlit Cloud (AI Engineer) + AWS FastAPI (MLE) | — | P1 | ⬜ Pendente | — |
+
+### Detalhamento S2-04 — Bill Breakdown
+
+**Problema:** usuário não conseguia identificar quais dispositivos compõem a conta e não havia controle granular por categoria.
+
+**Entregues:**
+- Gráfico horizontal `chart_bill_by_controllability`: R$ por dispositivo colorido por categoria (Fixo / Home Office / Flexível / EV)
+- 4 KPI cards de resumo por categoria com oportunidade de economia
+- Correção de **date boundary**: `_day_start()` trunca para meia-noite — alinha cálculo do dashboard com o agente (YYYY-MM-DD)
+
+**Decisão:** classificação via `usage_pattern` do schema DB (não nomes hardcoded) — robusto a mudanças de dados.
+
+---
+
+### Detalhamento S2-07 — Deploy Dual
+
+**Estratégia:**
+- **Streamlit Community Cloud**: demo público, posicionamento AI Engineer
+- **AWS + FastAPI**: posicionamento MLE/produção — mesmo agente exposto via REST
+
+**Execução:** após todas as features estarem implementadas e PR revisado.
+
+---
 
 ### Detalhamento S2-02 — Script de Avaliação
 
@@ -141,3 +166,6 @@ python -m energy_advisor.evaluation.runner --output eval_report.json
 | 23/05 | Fallback sintético automático no `generate_hourly_forecast` | Erro explícito se API falhar | Sistema degrada graciosamente — nunca quebra em demo ao vivo |
 | 23/05 | `data_source` no schema `WeatherForecast` | Campo invisível | Permite ao agente citar origem dos dados e ao LLM-as-judge verificar grounding |
 | 23/05 | Cache de 30 min no `_load_weather()` do Streamlit | Sem cache / cache curto | Open-Meteo free tier — não faz sentido recarregar a cada rerun |
+| 23/05 | Classificação de dispositivos via `usage_pattern` do DB | Frozenset hardcoded de nomes | Nomes dos dispositivos mudam com os dados; `usage_pattern` é parte do schema |
+| 23/05 | `_day_start()` trunca para meia-noite | `datetime.now() - timedelta(days=N)` direto | Agente usa datas YYYY-MM-DD (day boundary); dashboard deve ser consistente |
+| 23/05 | Deploy dual: Streamlit Cloud + AWS FastAPI | Apenas Streamlit Cloud | Sinaliza competência MLE (FastAPI/AWS) além de AI Engineer (Streamlit) |
