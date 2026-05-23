@@ -212,3 +212,4 @@ ecohome_solution/data/energy_data.db-journal
 ecohome_solution/data/vectorstore/*
 !ecohome_solution/data/vectorstore/.gitkeep
 test_keys.py
+*.ipynb
