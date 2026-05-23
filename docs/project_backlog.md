@@ -160,14 +160,14 @@ python -m energy_advisor.evaluation.runner --output eval_report.json
 ---
 
 ## Sprint 3 — Diferenciadores Técnicos
-> **Status: 🔄 Em andamento**
+> **Status: ✅ Concluído**
 
 | ID | Item | Impacto na Entrevista | Esforço | Status | Commit |
 |---|---|---|---|---|---|
 | S3-01 | Hybrid RAG: BM25 + semantic search + RRF | "Como você melhoraria o recall do RAG?" | Médio | ✅ Entregue | `fc67aaa` |
-| S3-02 | Streaming de respostas no chat (SSE) | "Como você faria UX em tempo real?" | Médio | ⬜ Pendente | — |
-| S3-03 | GitHub Actions CI: ruff + pytest --cov no push | Demonstra maturidade DevOps | Baixo | ⬜ Pendente | — |
-| S3-04 | Diagrama de arquitetura no README (Mermaid) | "Explique a arquitetura em 2 minutos" | Baixo | ⬜ Pendente | — |
+| S3-02 | Streaming de respostas no chat (token streaming) | "Como você faria UX em tempo real?" | Médio | ✅ Entregue | `7f3d6e9` |
+| S3-03 | GitHub Actions CI: ruff + pytest --cov no push | Demonstra maturidade DevOps | Baixo | ✅ Entregue | `7f3d6e9` |
+| S3-04 | Diagrama de arquitetura no README (Mermaid) | "Explique a arquitetura em 2 minutos" | Baixo | ✅ Entregue | `7f3d6e9` |
 
 ---
 
@@ -203,3 +203,6 @@ python -m energy_advisor.evaluation.runner --output eval_report.json
 | 23/05 | FakeEmbeddings nos testes de retrieval | Mock do vectorstore | EnsembleRetriever valida Pydantic que retrievers são instâncias Runnable; MagicMock não passa — FakeEmbeddings gera vetores reais |
 | 23/05 | Coverage config exclui bootstrap/evaluation/agent | Cobrir tudo com mocks | Esses módulos requerem LLM real; mockar o LangGraph inteiro não testa comportamento relevante |
 | 23/05 | Notebooks removidos do repo (apenas .gitignore) | Manter como documentação | Notebooks têm kernel stateful e não são deployáveis — toda lógica já estava em módulos Python |
+| 23/05 | Token streaming via LangGraph `stream_mode="messages"` | Polling do resultado final | Tokens renderizam conforme chegam; `tool_call_chunks` filtra mensagens intermediárias |
+| 23/05 | `last_tools_used` como side-effect do generator | Segunda chamada ao agente para buscar tools | Evita double LLM call — ToolMessage capturado durante o stream |
+| 23/05 | CI faz lint só em `energy_advisor/ tests/` | Lint em toda a codebase | `app/streamlit_app.py` tem E402 estrutural pelo `sys.path` manipulation — não fixável sem refactor |
