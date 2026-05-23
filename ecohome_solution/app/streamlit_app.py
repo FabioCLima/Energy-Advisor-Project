@@ -31,6 +31,8 @@ from app.components.charts import (
     chart_home_office_report,
     chart_solar_vs_consumption,
     chart_tou_rates,
+    render_daily_insight,
+    render_ev_summary,
     render_metrics,
 )
 from app.components.chat import render_chat
@@ -80,37 +82,51 @@ with tab_dash:
     render_metrics(settings.db_path, days=days_filter)
     st.divider()
 
-    col1, col2 = st.columns(2)
-    with col1:
+    # U3: Actionable insight of the day
+    render_daily_insight(settings.db_path)
+    st.divider()
+
+    # U2: Left column = device breakdown + home office
+    #     Right column = time-series analysis (solar + tariffs)
+    col_left, col_right = st.columns(2)
+
+    with col_left:
         st.plotly_chart(
             chart_consumption_by_device(settings.db_path, days=days_filter),
             use_container_width=True,
         )
-    with col2:
+        st.divider()
+        # D1: Tesla in its own section
+        st.markdown("#### 🚗 EV Charging — Tesla Model 3")
+        render_ev_summary(settings.db_path, days=days_filter)
+
+    with col_right:
+        # Solar chart (top)
         st.plotly_chart(
             chart_solar_vs_consumption(settings.db_path, days=days_filter),
             use_container_width=True,
         )
-
-    st.divider()
-
-    col3, col4 = st.columns(2)
-    with col3:
+        # Tariff chart directly below solar (U2 — same column = temporal analysis)
         st.plotly_chart(chart_tou_rates(), use_container_width=True)
         st.caption(
             "🟢 Off-peak night (0h–5h): best window for EV charging and heavy appliances.  "
             "🔴 Peak (18h–20h): avoid intensive consumption."
         )
-    with col4:
+
+    st.divider()
+
+    # Home office cost report — full width section
+    st.markdown("#### 💼 Home Office Cost Report")
+    col_ho, col_info = st.columns([2, 1])
+    with col_ho:
         fig_office, summary = chart_home_office_report(settings.db_path, days=days_filter)
         st.plotly_chart(fig_office, use_container_width=True)
+    with col_info:
         if summary:
+            st.metric("Period Total", f"R$ {summary['total_brl']:.2f}", help=f"{summary['total_kwh']:.1f} kWh")
+            st.metric("Monthly Projection", f"R$ {summary['monthly_brl']:.2f}")
+            st.metric("Annual Projection", f"R$ {summary['annual_brl']:.2f}")
             st.info(
-                f"💼 **Home Office Cost Report**\n\n"
-                f"Period total: **R$ {summary['total_brl']:.2f}** "
-                f"({summary['total_kwh']:.1f} kWh)\n\n"
-                f"Monthly projection: **R$ {summary['monthly_brl']:.2f}**  \n"
-                f"Annual projection: **R$ {summary['annual_brl']:.2f}**\n\n"
                 "_Use this data to negotiate a home office energy subsidy with your employer._"
             )
 

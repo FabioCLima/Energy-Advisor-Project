@@ -24,14 +24,20 @@ def _db() -> DatabaseManager:
 
 @tool
 def query_energy_usage(
-    start_date: str, end_date: str, device_type: str | None = None
+    start_date: str,
+    end_date: str,
+    device_name: str | None = None,
+    usage_pattern: str | None = None,
 ) -> dict[str, Any]:
-    """Query energy usage data from the local SQLite database for a date range.
+    """Query energy usage from the SQLite database, aggregated by device.
+
+    Returns a summary with totals and a per-device breakdown — NOT raw records.
 
     Args:
         start_date: Start date in YYYY-MM-DD format.
         end_date: End date in YYYY-MM-DD format (inclusive).
-        device_type: Optional filter, e.g. 'EV', 'HVAC', 'appliance'.
+        device_name: Optional exact device name filter, e.g. 'Tesla Model 3 Long Range'.
+        usage_pattern: Optional filter — one of 'always_on', 'presence_dependent', 'scheduled'.
     """
     try:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -40,29 +46,52 @@ def query_energy_usage(
         return {"error": "Invalid date format. Use YYYY-MM-DD."}
 
     try:
-        logger.debug("query_energy_usage | {} → {} | device={}", start_date, end_date, device_type)
+        logger.debug(
+            "query_energy_usage | {} → {} | device_name={} pattern={}",
+            start_date, end_date, device_name, usage_pattern,
+        )
         db = _db()
         records = db.get_usage_by_date_range(start_dt, end_dt)
-        if device_type:
-            records = [r for r in records if r.device_type == device_type]
+
+        if device_name:
+            records = [r for r in records if r.device_name == device_name]
+        if usage_pattern:
+            records = [r for r in records if (r.usage_pattern or "") == usage_pattern]
+
+        # Aggregate by device — avoid sending thousands of raw rows to the LLM
+        by_device: dict[str, dict[str, Any]] = {}
+        for r in records:
+            key = r.device_name or r.device_type or "unknown"
+            bucket = by_device.setdefault(key, {
+                "device_name": key,
+                "device_type": r.device_type,
+                "usage_pattern": r.usage_pattern,
+                "consumption_kwh": 0.0,
+                "cost_brl": 0.0,
+                "record_count": 0,
+            })
+            bucket["consumption_kwh"] += r.consumption_kwh
+            bucket["cost_brl"] += r.cost_brl or 0.0
+            bucket["record_count"] += 1
+
+        device_breakdown = sorted(
+            [
+                {**v,
+                 "consumption_kwh": round(v["consumption_kwh"], 2),
+                 "cost_brl": round(v["cost_brl"], 2)}
+                for v in by_device.values()
+            ],
+            key=lambda x: x["cost_brl"],
+            reverse=True,
+        )
 
         return {
             "start_date": start_date,
             "end_date": end_date,
-            "device_type": device_type,
-            "total_records": len(records),
+            "filters": {"device_name": device_name, "usage_pattern": usage_pattern},
             "total_consumption_kwh": round(sum(r.consumption_kwh for r in records), 2),
             "total_cost_brl": round(sum(r.cost_brl or 0.0 for r in records), 2),
-            "records": [
-                {
-                    "timestamp": r.timestamp.isoformat(),
-                    "consumption_kwh": r.consumption_kwh,
-                    "device_type": r.device_type,
-                    "device_name": r.device_name,
-                    "cost_brl": r.cost_brl,
-                }
-                for r in records
-            ],
+            "device_breakdown": device_breakdown,
         }
     except Exception as exc:
         logger.exception("query_energy_usage failed")

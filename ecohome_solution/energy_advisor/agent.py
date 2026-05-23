@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta
 from typing import Any, Annotated, TypedDict
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -113,7 +114,15 @@ class EnergyAdvisorAgent:
         Returns:
             The LangGraph state dict. Final answer is in result["messages"][-1].content.
         """
-        messages: list[BaseMessage] = [self._system_message]
+        now = datetime.now()
+        date_context = SystemMessage(
+            content=(
+                f"Current date and time: {now.strftime('%Y-%m-%d %H:%M')} (São Paulo, BRT).\n"
+                f"When the user says 'last 30 days', use start_date={( now - timedelta(days=30)).strftime('%Y-%m-%d')}"
+                f" and end_date={now.strftime('%Y-%m-%d')}."
+            )
+        )
+        messages: list[BaseMessage] = [self._system_message, date_context]
         if context:
             messages.append(SystemMessage(content=context))
         messages.append(HumanMessage(content=question))
