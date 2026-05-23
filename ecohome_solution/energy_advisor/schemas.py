@@ -46,8 +46,10 @@ class ElectricityRate(BaseModel):
 class ElectricityPrices(BaseModel):
     date: str
     pricing_type: str = "time_of_use"
-    currency: str = "USD"
+    currency: str = "BRL"
     unit: str = "per_kWh"
+    bandeira: str = "verde"
+    distribuidora: str = "Enel SP"
     hourly_rates: list[ElectricityRate]
 
 
@@ -73,10 +75,10 @@ class SavingsResult(BaseModel):
     current_usage_kwh: float
     optimized_usage_kwh: float
     savings_kwh: float
-    savings_usd: float
+    savings_brl: float
     savings_percentage: float
     price_per_kwh: float
-    annual_savings_usd: float
+    annual_savings_brl: float
 
 
 # ── Agent request / response ──────────────────────────────────────────

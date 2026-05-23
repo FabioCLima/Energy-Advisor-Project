@@ -18,7 +18,7 @@ def compute_savings(
     the savings tool is a thin wrapper that calls this function.
     """
     savings_kwh = current_usage_kwh - optimized_usage_kwh
-    savings_usd = savings_kwh * price_per_kwh
+    savings_brl = savings_kwh * price_per_kwh
     savings_pct = (savings_kwh / current_usage_kwh * 100) if current_usage_kwh > 0 else 0.0
 
     return SavingsResult(
@@ -26,10 +26,10 @@ def compute_savings(
         current_usage_kwh=current_usage_kwh,
         optimized_usage_kwh=optimized_usage_kwh,
         savings_kwh=round(savings_kwh, 2),
-        savings_usd=round(savings_usd, 2),
+        savings_brl=round(savings_brl, 2),
         savings_percentage=round(savings_pct, 1),
         price_per_kwh=price_per_kwh,
-        annual_savings_usd=round(savings_usd * 365, 2),
+        annual_savings_brl=round(savings_brl * 365, 2),
     )
 
 
