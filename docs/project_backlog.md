@@ -27,7 +27,7 @@
 | C2 | Dashboard mostra ≥ 4 gráficos com dados reais do SQLite | ✅ Entregue |
 | C3 | Chat responde em < 15s com ferramenta usada visível | ✅ Entregue |
 | C4 | `pytest` passa sem erros | ✅ Entregue |
-| C5 | README tem screenshot/GIF + setup em 3 passos | ⬜ Pendente |
+| C5 | README tem screenshot/GIF + setup em 3 passos | ✅ Entregue |
 | C6 | Script de avaliação executável com métricas documentadas | ⬜ Pendente |
 | C7 | URL pública acessível (Streamlit Community Cloud) | ⬜ Pendente |
 
@@ -74,13 +74,13 @@
 
 ### Backlog
 
-| ID | Item | Arquivo(s) | Prioridade | Status |
-|---|---|---|---|---|
-| S2-01 | README reescrito: screenshot, badges, setup em 3 passos, narrativa CAR | `README.md` | P0 | ⬜ Pendente |
-| S2-02 | Script de avaliação standalone: runner + scenarios + relatório JSON | `energy_advisor/evaluation/` | P1 | ⬜ Pendente |
-| S2-03 | Open-Meteo API: substituir `get_weather_forecast` sintético por dados reais de SP | `services/forecasting.py`, `tools/weather.py` | P1 | ⬜ Pendente |
-| S2-04 | Expandir testes: tools e retrieval (cobertura > 70%) | `tests/` | P1 | ⬜ Pendente |
-| S2-05 | Deploy no Streamlit Community Cloud (URL pública) | — | P1 | ⬜ Pendente |
+| ID | Item | Arquivo(s) | Prioridade | Status | Commit |
+|---|---|---|---|---|---|
+| S2-01 | README reescrito: screenshot, badges, setup em 3 passos, narrativa CAR | `README.md`, `ecohome_solution/README.md`, `docs/assets/dashboard.png` | P0 | ✅ Entregue | `ffa7029` |
+| S2-02 | Script de avaliação standalone: runner + scenarios + relatório JSON | `energy_advisor/evaluation/` | P1 | ⬜ Pendente | — |
+| S2-03 | Open-Meteo API: substituir `get_weather_forecast` sintético por dados reais de SP | `services/forecasting.py`, `tools/weather.py`, `schemas.py`, `app/components/charts.py` | P1 | ✅ Entregue | `d3f17b7` |
+| S2-04 | Expandir testes: tools e retrieval (cobertura > 70%) | `tests/` | P1 | ⬜ Pendente | — |
+| S2-05 | Deploy no Streamlit Community Cloud (URL pública) | — | P1 | ⬜ Pendente | — |
 
 ### Detalhamento S2-02 — Script de Avaliação
 
@@ -105,14 +105,14 @@ python -m energy_advisor.evaluation.runner --output eval_report.json
 ---
 
 ## Sprint 3 — Diferenciadores Técnicos
-> **Status: ⬜ Planejado (pós Sprint 2)**
+> **Status: 🔄 Em andamento (pós S2-02)**
 
-| ID | Item | Impacto na Entrevista | Esforço |
-|---|---|---|---|
-| S3-01 | Hybrid RAG: BM25 + semantic search + re-ranking | "Como você melhoraria o recall do RAG?" | Médio |
-| S3-02 | Streaming de respostas no chat (SSE) | "Como você faria UX em tempo real?" | Médio |
-| S3-03 | GitHub Actions CI: ruff + pytest --cov no push | Demonstra maturidade DevOps | Baixo |
-| S3-04 | Diagrama de arquitetura no README (Mermaid) | "Explique a arquitetura em 2 minutos" | Baixo |
+| ID | Item | Impacto na Entrevista | Esforço | Status |
+|---|---|---|---|---|
+| S3-01 | Hybrid RAG: BM25 + semantic search + re-ranking | "Como você melhoraria o recall do RAG?" | Médio | ⬜ Pendente |
+| S3-02 | Streaming de respostas no chat (SSE) | "Como você faria UX em tempo real?" | Médio | ⬜ Pendente |
+| S3-03 | GitHub Actions CI: ruff + pytest --cov no push | Demonstra maturidade DevOps | Baixo | ⬜ Pendente |
+| S3-04 | Diagrama de arquitetura no README (Mermaid) | "Explique a arquitetura em 2 minutos" | Baixo | ⬜ Pendente |
 
 ---
 
@@ -137,3 +137,7 @@ python -m energy_advisor.evaluation.runner --output eval_report.json
 | 23/05 | Dados sintéticos com `prob_fn` por dispositivo | CSV estático | Padrões realistas sem API externa |
 | 23/05 | `query_energy_usage` retorna agregado por dispositivo | Registros brutos | LLM não consegue processar 2000+ rows |
 | 23/05 | Data atual injetada em cada `invoke()` | Hardcoded no system prompt | System prompt é estático (init time) |
+| 23/05 | Open-Meteo com `direct + diffuse radiation` | `shortwave_radiation` agregado | Ambos os componentes geram energia; difuso é relevante em dias nublados |
+| 23/05 | Fallback sintético automático no `generate_hourly_forecast` | Erro explícito se API falhar | Sistema degrada graciosamente — nunca quebra em demo ao vivo |
+| 23/05 | `data_source` no schema `WeatherForecast` | Campo invisível | Permite ao agente citar origem dos dados e ao LLM-as-judge verificar grounding |
+| 23/05 | Cache de 30 min no `_load_weather()` do Streamlit | Sem cache / cache curto | Open-Meteo free tier — não faz sentido recarregar a cada rerun |
