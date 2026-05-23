@@ -15,15 +15,15 @@ from __future__ import annotations
 
 import math
 import random
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Callable, NamedTuple
+from typing import NamedTuple
 
 from loguru import logger
 
 from ..config import Settings
 from ..services.database import DatabaseManager
-from ..services.pricing import BANDEIRAS, _BANDEIRA_DEFAULT
-
+from ..services.pricing import _BANDEIRA_DEFAULT, BANDEIRAS
 
 # ── Estrutura de perfil de dispositivo ───────────────────────────────
 
