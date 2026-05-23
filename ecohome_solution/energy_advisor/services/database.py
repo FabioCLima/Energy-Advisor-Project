@@ -25,7 +25,9 @@ class EnergyUsage(Base):
     consumption_kwh = Column(Float, nullable=False)
     device_type = Column(String(50), nullable=True)
     device_name = Column(String(100), nullable=True)
-    cost_usd = Column(Float, nullable=True)
+    usage_pattern = Column(String(50), nullable=True)   # always_on | scheduled | presence_dependent
+    location = Column(String(50), nullable=True)         # office | kitchen | living_room | bedroom | outdoor | bathroom
+    cost_brl = Column(Float, nullable=True)
 
     def __repr__(self) -> str:
         return (
@@ -86,7 +88,9 @@ class DatabaseManager:
         consumption_kwh: float,
         device_type: str | None = None,
         device_name: str | None = None,
-        cost_usd: float | None = None,
+        usage_pattern: str | None = None,
+        location: str | None = None,
+        cost_brl: float | None = None,
     ) -> EnergyUsage:
         session = self.get_session()
         try:
@@ -95,7 +99,9 @@ class DatabaseManager:
                 consumption_kwh=consumption_kwh,
                 device_type=device_type,
                 device_name=device_name,
-                cost_usd=cost_usd,
+                usage_pattern=usage_pattern,
+                location=location,
+                cost_brl=cost_brl,
             )
             session.add(record)
             session.commit()

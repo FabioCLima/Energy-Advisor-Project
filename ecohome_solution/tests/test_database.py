@@ -18,16 +18,18 @@ def test_add_and_query_usage(db: DatabaseManager):
     db.add_usage_record(
         timestamp=ts,
         consumption_kwh=2.5,
-        device_type="EV",
+        device_type="ev",
         device_name="Tesla Model 3",
-        cost_usd=0.30,
+        usage_pattern="scheduled",
+        location="outdoor",
+        cost_brl=3.28,
     )
     records = db.get_usage_by_date_range(
         datetime(2025, 1, 15), datetime(2025, 1, 16)
     )
     assert len(records) == 1
     assert records[0].consumption_kwh == 2.5
-    assert records[0].device_type == "EV"
+    assert records[0].device_type == "ev"
 
 
 def test_add_and_query_solar(db: DatabaseManager):

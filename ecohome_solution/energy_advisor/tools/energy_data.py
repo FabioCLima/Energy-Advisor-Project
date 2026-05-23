@@ -52,14 +52,14 @@ def query_energy_usage(
             "device_type": device_type,
             "total_records": len(records),
             "total_consumption_kwh": round(sum(r.consumption_kwh for r in records), 2),
-            "total_cost_usd": round(sum(r.cost_usd or 0.0 for r in records), 2),
+            "total_cost_brl": round(sum(r.cost_brl or 0.0 for r in records), 2),
             "records": [
                 {
                     "timestamp": r.timestamp.isoformat(),
                     "consumption_kwh": r.consumption_kwh,
                     "device_type": r.device_type,
                     "device_name": r.device_name,
-                    "cost_usd": r.cost_usd,
+                    "cost_brl": r.cost_brl,
                 }
                 for r in records
             ],
@@ -133,21 +133,21 @@ def get_recent_energy_summary(hours: int = 24) -> dict[str, Any]:
         for r in usage_records:
             key = r.device_type or "unknown"
             bucket = device_breakdown.setdefault(
-                key, {"consumption_kwh": 0.0, "cost_usd": 0.0, "records": 0}
+                key, {"consumption_kwh": 0.0, "cost_brl": 0.0, "records": 0}
             )
             bucket["consumption_kwh"] += r.consumption_kwh
-            bucket["cost_usd"] += r.cost_usd or 0.0
+            bucket["cost_brl"] += r.cost_brl or 0.0
             bucket["records"] += 1
 
         for v in device_breakdown.values():
             v["consumption_kwh"] = round(v["consumption_kwh"], 2)
-            v["cost_usd"] = round(v["cost_usd"], 2)
+            v["cost_brl"] = round(v["cost_brl"], 2)
 
         return {
             "time_period_hours": hours,
             "usage": {
                 "total_consumption_kwh": round(sum(r.consumption_kwh for r in usage_records), 2),
-                "total_cost_usd": round(sum(r.cost_usd or 0.0 for r in usage_records), 2),
+                "total_cost_brl": round(sum(r.cost_brl or 0.0 for r in usage_records), 2),
                 "device_breakdown": device_breakdown,
             },
             "generation": {

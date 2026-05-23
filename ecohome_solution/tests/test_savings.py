@@ -13,15 +13,15 @@ def test_basic_savings():
         price_per_kwh=0.12,
     )
     assert result.savings_kwh == 3.0
-    assert result.savings_usd == pytest.approx(0.36, abs=0.01)
+    assert result.savings_brl == pytest.approx(0.36, abs=0.01)
     assert result.savings_percentage == pytest.approx(30.0, abs=0.1)
-    assert result.annual_savings_usd == pytest.approx(0.36 * 365, abs=0.5)
+    assert result.annual_savings_brl == pytest.approx(0.36 * 365, abs=0.5)
 
 
 def test_zero_savings():
     result = compute_savings("HVAC", 5.0, 5.0, 0.12)
     assert result.savings_kwh == 0.0
-    assert result.savings_usd == 0.0
+    assert result.savings_brl == 0.0
     assert result.savings_percentage == 0.0
 
 
@@ -38,7 +38,7 @@ def test_full_savings():
 
 def test_annual_is_daily_times_365():
     result = compute_savings("Washer", 2.0, 1.5, 0.10)
-    assert result.annual_savings_usd == pytest.approx(result.savings_usd * 365, abs=0.01)
+    assert result.annual_savings_brl == pytest.approx(result.savings_brl * 365, abs=0.01)
 
 
 def test_price_per_kwh_stored():
