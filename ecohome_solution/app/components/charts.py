@@ -13,6 +13,7 @@ import streamlit as st
 
 from energy_advisor.services.database import DatabaseManager
 from energy_advisor.services.pricing import generate_time_of_use_prices
+from energy_advisor.services.forecasting import generate_hourly_forecast
 
 # ── Constants ─────────────────────────────────────────────────────────
 
@@ -43,6 +44,12 @@ _AVG_TARIFF_BRL = 0.656   # Enel SP mid-peak base rate used for solar savings es
 
 
 # ── Data loaders (cached) ─────────────────────────────────────────────
+
+@st.cache_data(ttl=1800)
+def _load_weather() -> dict:
+    """Fetch today's hourly forecast — cached 30 min to avoid hammering Open-Meteo."""
+    return generate_hourly_forecast("São Paulo", days=1)
+
 
 @st.cache_data(ttl=300)
 def _load_usage(db_path: str, days: int) -> pd.DataFrame:
@@ -403,38 +410,64 @@ def chart_home_office_report(db_path: str, days: int = 30) -> tuple[go.Figure, d
 
 def render_daily_insight(db_path: str) -> None:
     """
-    Pre-computed actionable insight card based on current hour,
-    tariff period, and recent solar data. No agent call required.
+    Actionable insight card combining real-time tariff, current weather,
+    and solar irradiance. Weather data from Open-Meteo (falls back to synthetic).
     """
-    pricing   = generate_time_of_use_prices()
-    now_h     = datetime.now().hour
-    rates     = {r["hour"]: r for r in pricing["hourly_rates"]}
-    current   = rates[now_h]
-    period    = current["period"]
-    rate      = current["rate"]
+    pricing = generate_time_of_use_prices()
+    now_h   = datetime.now().hour
+    rates   = {r["hour"]: r for r in pricing["hourly_rates"]}
+    current = rates[now_h]
+    period  = current["period"]
+    rate    = current["rate"]
 
     # Find cheapest window in the next 12 hours
-    upcoming  = [(h % 24, rates[h % 24]) for h in range(now_h + 1, now_h + 13)]
-    cheapest  = min(upcoming, key=lambda x: x[1]["rate"])
+    upcoming = [(h % 24, rates[h % 24]) for h in range(now_h + 1, now_h + 13)]
+    cheapest = min(upcoming, key=lambda x: x[1]["rate"])
+
+    # Real-time weather
+    weather      = _load_weather()
+    hourly_wx    = {h["hour"]: h for h in weather.get("hourly", [])}
+    current_wx   = hourly_wx.get(now_h, {})
+    irradiance   = current_wx.get("solar_irradiance", 0.0)
+    temperature  = current_wx.get("temperature_c")
+    condition    = current_wx.get("condition", "")
+    data_source  = weather.get("data_source", "synthetic")
+
+    # Irradiance thresholds for a 4kWp panel (roughly: >500 = good generation)
+    solar_active = irradiance > 100.0
+    solar_strong = irradiance > 500.0
 
     period_label = _PERIOD_LABEL.get(period, period)
     period_icon  = "🟢" if period == "off_peak" else "🟡" if period == "mid_peak" else "🔴"
 
+    source_badge = "🌐 Open-Meteo" if data_source == "open_meteo" else "⚙️ estimated"
+    temp_str     = f" · {temperature:.0f}°C" if temperature is not None else ""
+    irr_str      = f" · {irradiance:.0f} W/m²" if solar_active else ""
+
     lines = [
-        f"**{period_icon} Current tariff ({now_h}h): {period_label} — R$ {rate:.4f}/kWh**",
+        f"**{period_icon} Now ({now_h}h): {period_label} — R$ {rate:.4f}/kWh**  "
+        f"_({source_badge}{temp_str}{irr_str})_",
         "",
     ]
 
     if period == "peak":
-        lines.append("⚠️ **Peak hour** — avoid running the EV charger, washing machine, or dishwasher.")
+        lines.append("⚠️ **Peak hour** — avoid EV charger, washing machine, and dishwasher.")
         lines.append(f"💡 Next cheap window: **{cheapest[0]}h** at R$ {cheapest[1]['rate']:.4f}/kWh")
+        if solar_active:
+            lines.append(f"☀️ Solar still generating ({irradiance:.0f} W/m²) — home office is partially offset.")
     elif period == "off_peak":
         lines.append("✅ **Best time to charge the EV** and run heavy appliances (lowest tariff).")
-        lines.append(f"☀️ Solar generation is likely zero now — all savings come from the off-peak rate.")
-    else:
-        if 9 <= now_h <= 16:
-            lines.append("☀️ **Solar peak hours** — home office devices are likely running on free solar energy.")
-            lines.append(f"⚡ Avoid shifting loads to after 18h (peak rate: R$ 0.987/kWh).")
+        if solar_active:
+            lines.append(f"🌤️ Some irradiance now ({irradiance:.0f} W/m²) — but off-peak rate beats waiting for solar.")
+        else:
+            lines.append("☀️ No solar generation now — all savings come from the off-peak rate.")
+    else:  # mid_peak
+        if solar_strong:
+            lines.append(f"☀️ **Strong solar generation** ({irradiance:.0f} W/m²) — home office likely running on free solar.")
+            lines.append("⚡ Delay EV charging until after 20h off-peak (R$ 0.538/kWh).")
+        elif solar_active:
+            lines.append(f"🌤️ Moderate solar ({irradiance:.0f} W/m²) — partially offsetting home office load.")
+            lines.append(f"💡 Next cheapest window: **{cheapest[0]}h** at R$ {cheapest[1]['rate']:.4f}/kWh")
         else:
             lines.append(f"💡 Next cheapest window in next 12h: **{cheapest[0]}h** at R$ {cheapest[1]['rate']:.4f}/kWh")
 

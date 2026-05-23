@@ -11,14 +11,19 @@ from ..services.forecasting import generate_hourly_forecast
 
 @tool
 def get_weather_forecast(location: str, days: int = 3) -> dict[str, Any]:
-    """Get a synthetic weather forecast for a location.
+    """Get a real-time weather forecast for a location using the Open-Meteo API.
 
-    Returns hourly temperature, solar irradiance, humidity, and wind speed.
-    Data is deterministically generated per location and date — ideal for
-    reproducible testing and scheduling logic without external API calls.
+    Returns today's hourly temperature, solar irradiance (W/m²), humidity, and
+    wind speed. Falls back to deterministic synthetic data when the API is
+    unreachable. Check 'data_source' in the response: 'open_meteo' = real data,
+    'synthetic' = fallback.
+
+    Solar irradiance (direct_radiation + diffuse_radiation) is the key input for
+    estimating photovoltaic panel generation. Peak values above 600 W/m² indicate
+    strong solar generation hours.
 
     Args:
-        location: City or location name.
+        location: City or location name (currently resolved to São Paulo, SP).
         days: Number of forecast days (1–7, default 3).
     """
     if not location or not location.strip():
