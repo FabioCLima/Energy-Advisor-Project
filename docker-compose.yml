@@ -1,0 +1,24 @@
+services:
+  ecohome:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-}
+      - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-ecohome-energy-advisor}
+      - LANGCHAIN_ENDPOINT=${LANGCHAIN_ENDPOINT:-}
+    volumes:
+      - ecohome_data:/app/ecohome_solution/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  ecohome_data:
+    driver: local
