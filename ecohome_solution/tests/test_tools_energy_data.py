@@ -1,7 +1,6 @@
 """Tests for energy_advisor.tools.energy_data — query tools used by the ReAct agent."""
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta
 
 import pytest

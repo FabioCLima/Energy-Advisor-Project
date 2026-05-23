@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from energy_advisor.services.forecasting import _WMO_CONDITION, generate_hourly_forecast
 
 # Minimal valid Open-Meteo API response for mocking

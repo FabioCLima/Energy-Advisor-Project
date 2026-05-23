@@ -83,19 +83,19 @@ def _handle_question(question: str, agent: object | None) -> None:
     with st.chat_message("assistant"):
         if agent is None:
             answer = "Agent unavailable. Please set the API key and restart."
-            tools  = []
+            tools: list[str] = []
+            st.markdown(answer)
         else:
-            with st.spinner("Querying data and tools..."):
-                try:
-                    result = agent.invoke(question)
-                    msgs   = result.get("messages", [])
-                    answer = msgs[-1].content if msgs else "No response."
-                    tools  = _extract_tools_used(result)
-                except Exception as e:
-                    answer = f"❌ Agent error: {e}"
-                    tools  = []
+            try:
+                # st.write_stream consumes the generator and renders tokens as they arrive.
+                # Tool names accumulate in agent.last_tools_used as a side effect.
+                answer = st.write_stream(agent.stream(question))
+                tools = getattr(agent, "last_tools_used", [])
+            except Exception as e:
+                answer = f"❌ Agent error: {e}"
+                tools = []
+                st.markdown(answer)
 
-        st.markdown(answer)
         if tools:
             st.caption("🔧 Tools used: " + " · ".join(f"`{t}`" for t in tools))
 
