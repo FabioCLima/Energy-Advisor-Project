@@ -55,7 +55,10 @@ def test_api_key_fallback(monkeypatch):
     assert s.selected_api_key() == "openai-key"
 
 
-def test_default_paths():
+def test_default_paths(monkeypatch):
+    monkeypatch.delenv("ENERGY_ADVISOR_DB_PATH", raising=False)
+    monkeypatch.delenv("ENERGY_ADVISOR_DOCS_DIR", raising=False)
+    monkeypatch.delenv("ENERGY_ADVISOR_VECTORSTORE_DIR", raising=False)
     s = Settings()
     assert s.db_path == "data/energy_data.db"
     assert s.documents_dir == "data/documents"
