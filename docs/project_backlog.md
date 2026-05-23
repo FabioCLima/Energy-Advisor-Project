@@ -28,7 +28,7 @@
 | C3 | Chat responde em < 15s com ferramenta usada visível | ✅ Entregue |
 | C4 | `pytest` passa sem erros | ✅ Entregue |
 | C5 | README tem screenshot/GIF + setup em 3 passos | ✅ Entregue |
-| C6 | Script de avaliação executável com métricas documentadas | ⬜ Pendente |
+| C6 | Script de avaliação executável com métricas documentadas | ✅ Entregue |
 | C7 | URL pública acessível (Streamlit Community Cloud) | ⬜ Pendente |
 
 ---
@@ -77,7 +77,7 @@
 | ID | Item | Arquivo(s) | Prioridade | Status | Commit |
 |---|---|---|---|---|---|
 | S2-01 | README reescrito: screenshot, badges, setup em 3 passos, narrativa CAR | `README.md`, `ecohome_solution/README.md`, `docs/assets/dashboard.png` | P0 | ✅ Entregue | `ffa7029` |
-| S2-02 | Script de avaliação standalone: runner + scenarios + relatório JSON | `energy_advisor/evaluation/` | P1 | ⬜ Pendente | — |
+| S2-02 | Script de avaliação standalone: runner + scenarios + relatório JSON | `energy_advisor/evaluation/` | P1 | ✅ Entregue | `6f1ee6d` |
 | S2-03 | Open-Meteo API: substituir `get_weather_forecast` sintético por dados reais de SP | `services/forecasting.py`, `tools/weather.py`, `schemas.py`, `app/components/charts.py` | P1 | ✅ Entregue | `d3f17b7` |
 | S2-04 | Expandir testes: tools e retrieval (cobertura > 70%) | `tests/` | P1 | ⬜ Pendente | — |
 | S2-05 | Deploy no Streamlit Community Cloud (URL pública) | — | P1 | ⬜ Pendente | — |
