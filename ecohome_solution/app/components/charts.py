@@ -51,11 +51,18 @@ def _load_weather() -> dict:
     return generate_hourly_forecast("São Paulo", days=1)
 
 
+def _day_start(days_ago: int) -> datetime:
+    """Midnight N days ago — matches the agent's YYYY-MM-DD date boundary."""
+    return (datetime.now() - timedelta(days=days_ago)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+
+
 @st.cache_data(ttl=300)
 def _load_usage(db_path: str, days: int) -> pd.DataFrame:
     db = DatabaseManager(db_path=db_path)
     records = db.get_usage_by_date_range(
-        datetime.now() - timedelta(days=days), datetime.now()
+        _day_start(days), datetime.now()
     )
     if not records:
         return pd.DataFrame()
@@ -78,7 +85,7 @@ def _load_usage(db_path: str, days: int) -> pd.DataFrame:
 def _load_solar(db_path: str, days: int) -> pd.DataFrame:
     db = DatabaseManager(db_path=db_path)
     records = db.get_generation_by_date_range(
-        datetime.now() - timedelta(days=days), datetime.now()
+        _day_start(days), datetime.now()
     )
     if not records:
         return pd.DataFrame()
@@ -120,7 +127,7 @@ def render_metrics(db_path: str, days: int = 30) -> None:
     row1[1].metric("💸 Gross Cost",         f"R$ {total_brl:,.2f}",       help="Before solar offset")
     row1[2].metric("☀️ Solar Generation",   f"{solar_kwh:,.0f} kWh",      help=f"4kWp panel — {days} days")
     row1[3].metric("🔋 Self-sufficiency",   f"{self_suff:.0f}%",          help="Solar ÷ Total consumption")
-    row1[4].metric("🖥️ Home Office Cost",   f"R$ {office_brl:,.2f}",      help="PC + Monitor + AC office")
+    row1[4].metric("🖥️ Home Office Cost",   f"R$ {office_brl:,.2f}",      help="PC + Monitor + AC office · from start of day, 30 days ago")
 
     row2 = st.columns(3)
     row2[0].metric("☀️ Solar Savings",      f"R$ {solar_savings:,.2f}",   help=f"Solar × R$ {_AVG_TARIFF_BRL}/kWh")
@@ -472,3 +479,118 @@ def render_daily_insight(db_path: str) -> None:
             lines.append(f"💡 Next cheapest window in next 12h: **{cheapest[0]}h** at R$ {cheapest[1]['rate']:.4f}/kWh")
 
     st.info("\n".join(lines))
+
+
+# ── Bill breakdown by controllability ────────────────────────────────
+
+_CTRL_COLOR = {
+    "Fixed (always-on)":    "#95A5A6",
+    "Home Office":          "#E67E22",
+    "Flexible (shiftable)": "#2ECC71",
+    "EV Charging":          "#3498DB",
+}
+
+_OFF_PEAK_RATE = 0.538   # R$/kWh — cheapest window (0h–5h)
+
+
+def _classify_device(row: pd.Series) -> str:
+    """Classify device by controllability using the usage_pattern from the DB schema."""
+    if row["is_ev"]:
+        return "EV Charging"
+    if row["is_office"]:
+        return "Home Office"
+    if row["usage_pattern"] == "always_on":
+        return "Fixed (always-on)"
+    return "Flexible (shiftable)"   # scheduled or presence_dependent non-office
+
+
+def chart_bill_by_controllability(db_path: str, days: int = 30) -> go.Figure:
+    """Horizontal bar chart: R$ cost per device, coloured by how much João can control it."""
+    df = _load_usage(db_path, days)
+    if df.empty:
+        return go.Figure().update_layout(title="No data available")
+
+    df = df.copy()
+    df["controllability"] = df.apply(_classify_device, axis=1)
+
+    agg = (
+        df.groupby(["device_name", "controllability"], as_index=False)
+          .agg(cost_brl=("cost_brl", "sum"), kwh=("kwh", "sum"))
+          .sort_values("cost_brl", ascending=True)
+    )
+    agg["label"] = agg["cost_brl"].apply(lambda v: f"R$ {v:,.2f}")
+
+    fig = px.bar(
+        agg, x="cost_brl", y="device_name", orientation="h",
+        color="controllability",
+        color_discrete_map=_CTRL_COLOR,
+        text="label",
+        hover_data={"kwh": ":.1f", "cost_brl": ":.2f"},
+        labels={
+            "cost_brl":       "Cost (R$)",
+            "device_name":    "",
+            "controllability": "Category",
+            "kwh":            "Consumption (kWh)",
+        },
+        title=f"Where Your Money Goes — last {days} days",
+    )
+    fig.update_traces(textposition="outside")
+    fig.update_layout(
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        height=420,
+        margin=dict(l=10, r=80, t=60, b=20),
+    )
+    return fig
+
+
+def render_bill_analysis(db_path: str, days: int = 30) -> None:
+    """Render bill breakdown chart + actionable savings summary for João."""
+    df = _load_usage(db_path, days)
+    if df.empty:
+        return
+
+    df = df.copy()
+    df["controllability"] = df.apply(_classify_device, axis=1)
+
+    by_ctrl = df.groupby("controllability")["cost_brl"].sum()
+    fixed      = by_ctrl.get("Fixed (always-on)", 0.0)
+    office     = by_ctrl.get("Home Office", 0.0)
+    shiftable  = by_ctrl.get("Flexible (shiftable)", 0.0)
+    ev         = by_ctrl.get("EV Charging", 0.0)
+    total      = fixed + office + shiftable + ev
+
+    # Savings potential: shiftable devices shifted to off-peak
+    shiftable_kwh = df[df["controllability"] == "Flexible (shiftable)"]["kwh"].sum()
+    # Average current rate for shiftable devices (~mid-peak mix)
+    shiftable_avg_rate = (shiftable / shiftable_kwh) if shiftable_kwh > 0 else 0.656
+    shift_savings = max(0.0, shiftable_kwh * (shiftable_avg_rate - _OFF_PEAK_RATE))
+
+    # EV savings: if currently charging at mixed rates, shift to off-peak
+    ev_kwh = df[df["controllability"] == "EV Charging"]["kwh"].sum()
+    ev_avg_rate = (ev / ev_kwh) if ev_kwh > 0 else 0.656
+    ev_savings = max(0.0, ev_kwh * (ev_avg_rate - _OFF_PEAK_RATE))
+
+    st.plotly_chart(
+        chart_bill_by_controllability(db_path, days),
+        use_container_width=True,
+    )
+
+    # Summary metrics
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("🔒 Fixed costs",      f"R$ {fixed:,.2f}",     help="Always-on: fridge, router — baseline, can't reduce")
+    c2.metric("🖥️ Home Office",      f"R$ {office:,.2f}",    help="PC + Monitor + AC escritório — reduce or claim subsidy from employer")
+    c3.metric("🔄 Flexible load",    f"R$ {shiftable:,.2f}", help="Washing machine, shower, lights — shift to off-peak 0h–5h")
+    c4.metric("🚗 EV Charging",      f"R$ {ev:,.2f}",        help="Tesla Model 3 — save by charging 0h–5h at R$ 0.538/kWh")
+
+    # Actionable savings callout
+    total_savings = shift_savings + ev_savings
+    if total_savings > 1.0:
+        monthly_factor = 30 / max(days, 1)
+        monthly_savings = total_savings * monthly_factor
+        st.success(
+            f"**💡 Savings opportunity this period: R\\$ {total_savings:,.2f}**  "
+            f"(≈ R\\$ {monthly_savings:,.2f}/month) — shift flexible devices and EV charging "
+            f"to the off-peak window (0h–5h, R\\$ {_OFF_PEAK_RATE}/kWh)."
+        )
