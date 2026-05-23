@@ -3,10 +3,33 @@ from __future__ import annotations
 import os
 
 from langchain_chroma import Chroma
+from langchain_classic.retrievers.ensemble import EnsembleRetriever
 from langchain_community.document_loaders import TextLoader
+from langchain_community.retrievers.bm25 import BM25Retriever
+from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from loguru import logger
+
+_CHUNK_SIZE = 1000
+_CHUNK_OVERLAP = 200
+
+
+def _load_splits(document_paths: list[str]) -> list[Document]:
+    """Load .txt documents and split into chunks for indexing."""
+    documents: list[Document] = []
+    for path in document_paths:
+        if os.path.exists(path):
+            loader = TextLoader(path)
+            documents.extend(loader.load())
+            logger.debug("Loaded document: {}", path)
+        else:
+            logger.warning("Document not found, skipping: {}", path)
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=_CHUNK_SIZE, chunk_overlap=_CHUNK_OVERLAP
+    )
+    return splitter.split_documents(documents)
 
 
 def ensure_vectorstore(
@@ -29,7 +52,6 @@ def ensure_vectorstore(
     """
     os.makedirs(persist_directory, exist_ok=True)
     chroma_db_file = os.path.join(persist_directory, "chroma.sqlite3")
-    # Resolve key: explicit arg → env var (set by load_dotenv or shell)
     resolved_key = api_key or os.environ.get("OPENAI_API_KEY") or os.environ.get("VOCAREUM_API_KEY")
     resolved_url = base_url or os.environ.get("ENERGY_ADVISOR_BASE_URL")
     embeddings = OpenAIEmbeddings(
@@ -39,19 +61,8 @@ def ensure_vectorstore(
 
     if not os.path.exists(chroma_db_file):
         logger.info("Vectorstore not found — building from {} document(s)", len(document_paths))
-        documents = []
-        for path in document_paths:
-            if os.path.exists(path):
-                loader = TextLoader(path)
-                documents.extend(loader.load())
-                logger.debug("Loaded document: {}", path)
-            else:
-                logger.warning("Document not found, skipping: {}", path)
-
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        splits = splitter.split_documents(documents)
+        splits = _load_splits(document_paths)
         logger.info("Indexed {} chunks into vectorstore at {}", len(splits), persist_directory)
-
         return Chroma.from_documents(
             documents=splits,
             embedding=embeddings,
@@ -60,6 +71,39 @@ def ensure_vectorstore(
 
     logger.debug("Vectorstore found at {} — reusing existing index", persist_directory)
     return Chroma(persist_directory=persist_directory, embedding_function=embeddings)
+
+
+def build_hybrid_retriever(
+    persist_directory: str,
+    document_paths: list[str],
+    k: int = 5,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> EnsembleRetriever:
+    """Build a hybrid BM25 + semantic retriever with Reciprocal Rank Fusion (RRF).
+
+    BM25 handles exact keyword queries (e.g. "Tesla", "ANEEL", "bandeira vermelha").
+    Semantic search handles conceptual queries (e.g. "como economizar energia?").
+    RRF fuses both ranked lists: score = sum(1 / (k + rank_i)) — no re-ranking model needed.
+
+    Args:
+        persist_directory: ChromaDB persist directory.
+        document_paths: Paths to .txt knowledge base documents.
+        k: Number of candidates per retriever before fusion.
+        api_key: OpenAI API key for embeddings.
+        base_url: Optional custom OpenAI-compatible endpoint.
+
+    Returns:
+        EnsembleRetriever with equal weights [0.5 BM25, 0.5 semantic].
+    """
+    splits = _load_splits(document_paths)
+
+    bm25 = BM25Retriever.from_documents(splits, k=k)
+
+    vectorstore = ensure_vectorstore(persist_directory, document_paths, api_key, base_url)
+    semantic = vectorstore.as_retriever(search_kwargs={"k": k})
+
+    return EnsembleRetriever(retrievers=[bm25, semantic], weights=[0.5, 0.5])
 
 
 def list_document_paths(documents_dir: str) -> list[str]:
