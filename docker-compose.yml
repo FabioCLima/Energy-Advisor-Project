@@ -10,7 +10,7 @@ services:
       - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-ecohome-energy-advisor}
       - LANGCHAIN_ENDPOINT=${LANGCHAIN_ENDPOINT:-}
     volumes:
-      - ecohome_data:/app/ecohome_solution/data
+      - ecohome_data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]

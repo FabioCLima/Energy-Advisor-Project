@@ -19,12 +19,12 @@ env
 .env
 
 # Generated data — mounted as Docker volume
-ecohome_solution/data/
+data/
 
 # Development-only files
 *.ipynb
 .ipynb_checkpoints
-ecohome_solution/requirements-dev.txt
+requirements-dev.txt
 
 # Editor / OS
 .vscode

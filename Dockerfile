@@ -32,9 +32,7 @@ RUN pip install --no-cache-dir \
     "langchain-classic>=1.0.0"
 
 # Copy application code (data/ excluded via .dockerignore — mounted as volume)
-COPY ecohome_solution/ ./ecohome_solution/
-
-WORKDIR /app/ecohome_solution
+COPY . .
 
 EXPOSE 8501
 

@@ -12,9 +12,6 @@ env:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ecohome_solution
 
     steps:
       - uses: actions/checkout@v4.2.2

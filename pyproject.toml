@@ -3,7 +3,7 @@ name = "energy-advisor"
 version = "0.1.0"
 description = "EcoHome Energy Advisor — AI-powered smart-home energy optimization agent"
 requires-python = ">=3.12"
-readme = "ecohome_solution/README.md"
+readme = "README.md"
 dependencies = [
     "chromadb>=0.5.0",
     "langchain>=0.3.0",
@@ -39,5 +39,17 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.pytest.ini_options]
-testpaths = ["ecohome_solution/tests"]
+testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["energy_advisor"]
+omit = [
+    "energy_advisor/bootstrap/*",
+    "energy_advisor/evaluation/*",
+    "energy_advisor/agent.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 70
