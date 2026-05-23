@@ -213,3 +213,6 @@ ecohome_solution/data/vectorstore/*
 !ecohome_solution/data/vectorstore/.gitkeep
 test_keys.py
 *.ipynb
+
+# Local knowledge base — not part of the project deliverable
+docs/
