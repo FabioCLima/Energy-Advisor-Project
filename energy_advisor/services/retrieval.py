@@ -1,18 +1,43 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from langchain_chroma import Chroma
 from langchain_classic.retrievers.ensemble import EnsembleRetriever
-from langchain_community.document_loaders import TextLoader
-from langchain_community.retrievers.bm25 import BM25Retriever
+from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from loguru import logger
+from rank_bm25 import BM25Okapi
 
 _CHUNK_SIZE = 1000
 _CHUNK_OVERLAP = 200
+
+
+class _BM25Retriever(BaseRetriever):
+    """Thin BM25Okapi wrapper — replaces langchain_community.BM25Retriever."""
+
+    docs: list[Document]
+    k: int = 5
+    _bm25: Any = None
+
+    def model_post_init(self, __context: Any) -> None:
+        tokenized = [doc.page_content.lower().split() for doc in self.docs]
+        self._bm25 = BM25Okapi(tokenized)
+
+    def _get_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+    ) -> list[Document]:
+        scores = self._bm25.get_scores(query.lower().split())
+        top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[: self.k]
+        return [self.docs[i] for i in top_indices]
+
+    @classmethod
+    def from_documents(cls, documents: list[Document], k: int = 5) -> "_BM25Retriever":
+        return cls(docs=documents, k=k)
 
 
 def _load_splits(document_paths: list[str]) -> list[Document]:
@@ -20,8 +45,9 @@ def _load_splits(document_paths: list[str]) -> list[Document]:
     documents: list[Document] = []
     for path in document_paths:
         if os.path.exists(path):
-            loader = TextLoader(path)
-            documents.extend(loader.load())
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            documents.append(Document(page_content=text, metadata={"source": path}))
             logger.debug("Loaded document: {}", path)
         else:
             logger.warning("Document not found, skipping: {}", path)
@@ -98,7 +124,7 @@ def build_hybrid_retriever(
     """
     splits = _load_splits(document_paths)
 
-    bm25 = BM25Retriever.from_documents(splits, k=k)
+    bm25 = _BM25Retriever.from_documents(splits, k=k)
 
     vectorstore = ensure_vectorstore(persist_directory, document_paths, api_key, base_url)
     semantic = vectorstore.as_retriever(search_kwargs={"k": k})
