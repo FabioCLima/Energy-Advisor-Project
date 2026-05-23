@@ -1,0 +1,139 @@
+# Project Backlog — EcoHome Energy Advisor
+
+> **Contrato de trabalho** firmado em 23/05/2026.
+> Objetivo: transformar o projeto de um exercício acadêmico em portfólio profissional
+> apresentável em entrevista técnica de AI Engineer.
+> Atualizado a cada entrega — serve como auditoria do que foi combinado vs. entregue.
+
+---
+
+## Contexto e Objetivo
+
+**Problema:** projeto standalone sem interface visual, dados em USD, sem narrativa de produto.
+**Meta:** em ~3 dias, entregar um projeto que passe no critério do recrutador:
+- Roda com 1 comando (`docker compose up`)
+- Tem interface visual com dados reais (BRL, Enel SP, persona João)
+- Chat advisor responde perguntas com ferramentas reais
+- README conta a história CAR (Challenge → Action → Result)
+- Entrevistador consegue fazer perguntas técnicas e receber respostas sólidas
+
+---
+
+## Critérios de Aceite Globais
+
+| # | Critério | Status |
+|---|---|---|
+| C1 | `docker compose up` levanta o projeto sem erros | ✅ Entregue |
+| C2 | Dashboard mostra ≥ 4 gráficos com dados reais do SQLite | ✅ Entregue |
+| C3 | Chat responde em < 15s com ferramenta usada visível | ✅ Entregue |
+| C4 | `pytest` passa sem erros | ✅ Entregue |
+| C5 | README tem screenshot/GIF + setup em 3 passos | ⬜ Pendente |
+| C6 | Script de avaliação executável com métricas documentadas | ⬜ Pendente |
+| C7 | URL pública acessível (Streamlit Community Cloud) | ⬜ Pendente |
+
+---
+
+## Sprint 1 — UI, Dados e Docker
+> **Período:** 23/05/2026 · **Status: ✅ Concluído**
+
+### Backlog
+
+| ID | Item | Arquivo(s) | Status | Commit |
+|---|---|---|---|---|
+| S1-01 | Persona João: schema BRL, ANEEL bandeiras, 90 dias de dados | `bootstrap/sample_data.py`, `services/pricing.py`, `schemas.py` | ✅ | `aa477b7` |
+| S1-02 | Dashboard Streamlit: 4 gráficos Plotly + abas Chat/Dashboard | `app/streamlit_app.py`, `app/components/charts.py`, `app/components/chat.py` | ✅ | `a92b6ec` |
+| S1-03 | Resolver 12 bugs visuais documentados em `dashboard_improvements.md` | `app/components/charts.py`, `app/streamlit_app.py` | ✅ | `88cc6e9` |
+| S1-04 | Chat advisor operacional (datas corretas, query agregada, prompt com contexto) | `energy_advisor/agent.py`, `energy_advisor/prompts.py`, `energy_advisor/tools/energy_data.py` | ✅ | `88cc6e9` |
+| S1-05 | Docker: Dockerfile + docker-compose.yml + entrypoint + .dockerignore | `/Dockerfile`, `/docker-compose.yml`, `/docker-entrypoint.sh` | ✅ | `9072667` |
+| S1-06 | Narrativa CAR + decisões de arquitetura + Q&A para entrevista | `docs/interview_prep.md`, `docs/interview_qa.md` | ✅ | `b322b2e`, `0a30c88` |
+
+### Bugs resolvidos (S1-03)
+
+| ID | Descrição | Fix |
+|---|---|---|
+| B1 | Home Office Cost — valor duplicado e divergente | `HOME_OFFICE_DEVICES` frozenset como fonte única de verdade |
+| B2 | Formatação `++` nas projeções | Substituído por `st.metric` |
+| B3 | Labels `R$-` no gráfico home office | Coluna `label` explícita no DataFrame |
+| H1 | Eixo Y mal calibrado no gráfico home office | `range=[0, max_val * 1.30]` |
+| K1 | KPI de Autossuficiência Solar ausente | Adicionado: `solar_kwh / total_kwh * 100` |
+| K2 | KPI de Economia Solar em R$ ausente | Adicionado: `solar_kwh × R$ 0.656` |
+| K3 | KPI de Custo Líquido da Rede ausente | Adicionado: `total_brl − solar_savings` |
+| D1 | Tesla distorce escala do bar chart | Tesla separado em seção `render_ev_summary` com 4 metric cards |
+| D2 | Sem percentual nas barras de dispositivos | Coluna `pct` adicionada como label |
+| S1 | Unidade eixo Y incorreta (kWh vs kW) | Corrigido para `kW (avg)` |
+| S2 | Excedente solar não destacado | Área verde onde `solar > consumption` |
+| T1 | Labels sobrepostos nas tarifas | Label apenas na primeira barra de cada período |
+| T2 | Hora atual não marcada no gráfico de tarifas | `fig.add_vline` com anotação "Now" |
+| U2 | Solar e tarifas em lados opostos | Ambos na coluna direita (análise temporal) |
+| U3 | Sem insight acionável | Card `render_daily_insight` com tarifa atual + recomendação |
+
+---
+
+## Sprint 2 — Hardening e Avaliação
+> **Período:** 23/05/2026 · **Status: 🔄 Em andamento**
+
+### Backlog
+
+| ID | Item | Arquivo(s) | Prioridade | Status |
+|---|---|---|---|---|
+| S2-01 | README reescrito: screenshot, badges, setup em 3 passos, narrativa CAR | `README.md` | P0 | ⬜ Pendente |
+| S2-02 | Script de avaliação standalone: runner + scenarios + relatório JSON | `energy_advisor/evaluation/` | P1 | ⬜ Pendente |
+| S2-03 | Open-Meteo API: substituir `get_weather_forecast` sintético por dados reais de SP | `services/forecasting.py`, `tools/weather.py` | P1 | ⬜ Pendente |
+| S2-04 | Expandir testes: tools e retrieval (cobertura > 70%) | `tests/` | P1 | ⬜ Pendente |
+| S2-05 | Deploy no Streamlit Community Cloud (URL pública) | — | P1 | ⬜ Pendente |
+
+### Detalhamento S2-02 — Script de Avaliação
+
+```
+energy_advisor/evaluation/
+├── __init__.py
+├── scenarios.py    ← 10+ cenários de teste com expected_tools e rubric
+├── runner.py       ← executa agent.invoke() em cada cenário, coleta métricas
+└── report.py       ← gera relatório JSON/HTML com scores
+```
+
+Métricas a cobrir:
+- **Tool call accuracy**: o agente chamou as ferramentas certas?
+- **Response coherence**: resposta segue o formato estruturado (Recommendation / Why / ...)?
+- **Grounding**: números na resposta batem com os dados retornados pelas ferramentas?
+
+Execução:
+```bash
+python -m energy_advisor.evaluation.runner --output eval_report.json
+```
+
+---
+
+## Sprint 3 — Diferenciadores Técnicos
+> **Status: ⬜ Planejado (pós Sprint 2)**
+
+| ID | Item | Impacto na Entrevista | Esforço |
+|---|---|---|---|
+| S3-01 | Hybrid RAG: BM25 + semantic search + re-ranking | "Como você melhoraria o recall do RAG?" | Médio |
+| S3-02 | Streaming de respostas no chat (SSE) | "Como você faria UX em tempo real?" | Médio |
+| S3-03 | GitHub Actions CI: ruff + pytest --cov no push | Demonstra maturidade DevOps | Baixo |
+| S3-04 | Diagrama de arquitetura no README (Mermaid) | "Explique a arquitetura em 2 minutos" | Baixo |
+
+---
+
+## Backlog Descartado / Pós-entrevista
+
+| ID | Item | Motivo do adiamento |
+|---|---|---|
+| P2-01 | Personalização de usuário (preferências persistidas) | Baixo impacto para entrevista |
+| P2-02 | ML forecasting (Prophet/sklearn) | Alto esforço, fora do escopo imediato |
+| P2-03 | FastAPI + LangServe (API REST) | Streamlit suficiente para demo |
+
+---
+
+## Registro de Decisões Técnicas
+
+| Data | Decisão | Alternativa considerada | Motivo |
+|---|---|---|---|
+| 23/05 | LangGraph (grafo explícito) | LangChain LCEL | Fluxo auditável e testável |
+| 23/05 | SQLite | PostgreSQL | Portabilidade total para demo |
+| 23/05 | ChromaDB local | Pinecone | Zero infra externa |
+| 23/05 | `uv` para gerenciamento de pacotes | pip | Pedido explícito do usuário |
+| 23/05 | Dados sintéticos com `prob_fn` por dispositivo | CSV estático | Padrões realistas sem API externa |
+| 23/05 | `query_energy_usage` retorna agregado por dispositivo | Registros brutos | LLM não consegue processar 2000+ rows |
+| 23/05 | Data atual injetada em cada `invoke()` | Hardcoded no system prompt | System prompt é estático (init time) |
