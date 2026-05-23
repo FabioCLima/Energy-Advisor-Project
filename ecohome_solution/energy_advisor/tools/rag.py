@@ -7,14 +7,16 @@ from loguru import logger
 
 from ..config import Settings
 from ..schemas import RagSearchResult
-from ..services.retrieval import ensure_vectorstore, list_document_paths
+from ..services.retrieval import build_hybrid_retriever, list_document_paths
 
 
 @tool
 def search_energy_tips(query: str, max_results: int = 5) -> dict[str, Any]:
-    """Search the energy-saving knowledge base using semantic similarity (RAG).
+    """Search the energy-saving knowledge base using hybrid RAG (BM25 + semantic search).
 
-    Returns ranked tips from curated energy-efficiency documents.
+    Combines keyword matching (BM25) and semantic similarity via Reciprocal Rank Fusion.
+    BM25 excels at exact terms like "Tesla", "ANEEL", "bandeira vermelha".
+    Semantic search handles conceptual queries like "como economizar energia no inverno?".
 
     Args:
         query: Natural-language search query.
@@ -29,27 +31,28 @@ def search_energy_tips(query: str, max_results: int = 5) -> dict[str, Any]:
         settings = Settings()
         doc_paths = list_document_paths(settings.documents_dir)
         logger.debug(
-            "search_energy_tips | query='{}' docs={} store={}",
+            "search_energy_tips | query='{}' docs={} store={} retriever=hybrid_bm25_semantic",
             query, len(doc_paths), settings.vectorstore_dir,
         )
 
-        vectorstore = ensure_vectorstore(
+        retriever = build_hybrid_retriever(
             persist_directory=settings.vectorstore_dir,
             document_paths=doc_paths,
+            k=max_results,
             api_key=settings.selected_api_key(),
             base_url=settings.base_url,
         )
-        docs = vectorstore.similarity_search(query, k=max_results)
+        docs = retriever.invoke(query)
 
         payload = {
             "query": query,
+            "retrieval_method": "hybrid_bm25_semantic",
             "total_results": len(docs),
             "tips": [
                 {
                     "rank": i + 1,
                     "content": doc.page_content,
                     "source": (doc.metadata or {}).get("source", "unknown"),
-                    "relevance_score": "high" if i < 2 else "medium" if i < 4 else "low",
                 }
                 for i, doc in enumerate(docs)
             ],

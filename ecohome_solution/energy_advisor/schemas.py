@@ -60,11 +60,11 @@ class RagTip(BaseModel):
     rank: int
     content: str
     source: str = "unknown"
-    relevance_score: str = "medium"
 
 
 class RagSearchResult(BaseModel):
     query: str
+    retrieval_method: str = "hybrid_bm25_semantic"
     total_results: int
     tips: list[RagTip]
 
