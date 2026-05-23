@@ -2,214 +2,218 @@
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-ReAct_Agent-6B48FF?logo=chainlink&logoColor=white)
-![LangChain](https://img.shields.io/badge/LangChain-0.3-1C3C3C?logo=chainlink&logoColor=white)
-![Pydantic](https://img.shields.io/badge/Pydantic-v2-E92063?logo=pydantic&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?logo=streamlit&logoColor=white)
+![Open-Meteo](https://img.shields.io/badge/Open--Meteo-Real_Weather-4CAF50?logo=cloudflarepages&logoColor=white)
 ![Tests](https://img.shields.io/badge/Tests-37_passed-brightgreen?logo=pytest&logoColor=white)
-![Ruff](https://img.shields.io/badge/Linter-Ruff-D7FF64?logo=ruff&logoColor=black)
-![License](https://img.shields.io/badge/License-MIT-lightgrey)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
-AI-powered energy optimization agent for smart homes with solar generation, dynamic pricing, and personalized energy-saving recommendations.
+> AI-powered energy advisor for Brazilian households. Ask in natural language: *"Should I charge my Tesla now or wait for solar generation?"* The agent reasons over real consumption data, live weather, and ANEEL tariffs to give a grounded, quantified answer.
 
----
-
-## Submission Layout
-
-This project is organized to match the submission requirement that all deliverables live under `ecohome_solution/`.
-
-```text
-ecohome_solution/
-├── 01_db_setup.ipynb
-├── 02_rag_setup.ipynb
-├── 03_run_and_evaluate.ipynb
-├── main.py                      ← CLI entrypoint
-├── requirements.txt             ← runtime deps
-├── requirements-dev.txt         ← dev/test deps
-├── energy_advisor/              ← main Python package
-│   ├── agent.py                 ← LangGraph ReAct agent
-│   ├── config.py                ← Pydantic-settings config
-│   ├── schemas.py               ← Pydantic v2 schemas
-│   ├── prompts.py               ← system prompt
-│   ├── logging.py               ← loguru setup
-│   ├── tools/                   ← LangChain tools
-│   │   ├── weather.py
-│   │   ├── pricing.py
-│   │   ├── energy_data.py
-│   │   ├── rag.py
-│   │   └── savings.py
-│   ├── services/                ← business logic
-│   │   ├── database.py          ← SQLAlchemy models + DB manager
-│   │   ├── forecasting.py
-│   │   ├── pricing.py
-│   │   ├── recommendations.py
-│   │   └── retrieval.py
-│   └── bootstrap/               ← one-time setup scripts
-│       ├── db_setup.py
-│       ├── sample_data.py
-│       └── rag_setup.py
-├── tests/                       ← pytest test suite (37 tests)
-└── data/
-    ├── documents/               ← RAG knowledge base
-    ├── energy_data.db           ← SQLite (generated)
-    └── vectorstore/             ← ChromaDB (generated)
-```
+![EcoHome Dashboard](../docs/assets/dashboard.png)
 
 ---
 
-## What The Solution Does
-
-The Energy Advisor combines structured energy data, solar generation history, pricing information, weather context, and RAG-powered knowledge retrieval to answer optimization questions such as:
-
-- when to charge an EV
-- when to run appliances at lower cost
-- how to use more self-generated solar energy
-- how much money can be saved through schedule changes
-
-## Main Capabilities
-
-| Capability | Description |
-|---|---|
-| Multi-tool reasoning | Weather, pricing, energy usage, solar generation |
-| Historical analysis | Personalized recommendations from past behavior |
-| RAG knowledge retrieval | Best practices from curated energy-saving documents |
-| Cost optimization | Pricing windows + forecasted solar + device flexibility |
-| Savings estimation | Quantified cost reduction and efficiency gains |
-
----
-
-## Setup
-
-### 1. Clone and enter the submission folder
+## Quick Start
 
 ```bash
 git clone https://github.com/FabioCLima/Energy-Advisor-Project.git
-cd Energy-Advisor-Project/ecohome_solution
+cd Energy-Advisor-Project
+echo "OPENAI_API_KEY=sk-..." > ecohome_solution/.env
+docker compose up
 ```
 
-### 2. Install dependencies
+Open **http://localhost:8501** — dashboard loads with 90 days of sample data pre-populated.
 
-```bash
-# Runtime only
-pip install -r requirements.txt
+> No Docker? See [manual setup](#manual-setup) below.
 
-# Development + tests (recommended)
-pip install -r requirements-dev.txt
+---
+
+## The Problem
+
+Brazilian households with solar panels, EVs, and home offices face three disconnected data sources:
+- **Energy bills** (kWh and BRL, with ANEEL bandeira surcharges that change monthly)
+- **Solar generation** (depends on irradiance — weather changes everything)
+- **Usage patterns** (EV charges at night, home office runs 9–18h, AC peaks in summer)
+
+Manually cross-referencing these to answer "what's the cheapest time to charge my car today?" is impossible without tooling. EcoHome automates that reasoning.
+
+---
+
+## What the Agent Does
+
+The LangGraph ReAct agent coordinates **7 specialized tools** and reasons over multiple sources before responding:
+
+| Tool | Data source | What it enables |
+|---|---|---|
+| `query_energy_usage` | SQLite (90 days, per-device) | "How much did my AC cost last week?" |
+| `query_solar_generation` | SQLite (hourly generation) | "When did my panel produce the most?" |
+| `get_electricity_prices` | ANEEL TOU + bandeira table | "What's the current tariff?" |
+| `get_weather_forecast` | **Open-Meteo API** (real data) | "Will solar generate enough this afternoon?" |
+| `search_energy_tips` | ChromaDB RAG (5 documents) | "Best practices for EV charging?" |
+| `calculate_energy_savings` | Savings math engine | "How much would I save shifting to off-peak?" |
+| `get_recent_energy_summary` | SQLite aggregate | Context for open-ended questions |
+
+**Example exchange:**
+
+> **User:** Vale a pena ligar o ar-condicionado agora?
+>
+> **Agent:** Agora (15h) você está em horário mid-peak (R$ 0,6560/kWh) com irradiância solar moderada de 197 W/m² — seu painel está gerando parcialmente. O custo real do AC é de ~R$ 0,35/h com o offset solar. Se esperar até as 18h, o pico sobe para R$ 0,987/kWh. **Recomendação: ligue agora, antes do horário de ponta.**
+
+---
+
+## Architecture
+
+Six-layer design — each layer testable and replaceable independently:
+
+```
+┌─────────────────────────────────────┐
+│  1. Interaction    Streamlit UI      │  Dashboard + Chat tabs
+├─────────────────────────────────────┤
+│  2. Orchestration  EnergyAdvisorAgent│  LangGraph ReAct graph
+├─────────────────────────────────────┤
+│  3. Tools          7 @tool functions │  Isolated, typed, directly testable
+├─────────────────────────────────────┤
+│  4. Services       Business logic    │  database · pricing · forecasting · retrieval
+├─────────────────────────────────────┤
+│  5. Storage        SQLite + ChromaDB │  Time-series records + vector embeddings
+├─────────────────────────────────────┤
+│  6. Observability  Loguru + LangSmith│  Structured logs + optional trace UI
+└─────────────────────────────────────┘
 ```
 
-### 3. Configure environment
+**Key decisions:**
 
-Copy the example and fill in your keys:
+- **LangGraph over LCEL** — the ReAct loop (reason → call tool → reason again) is not linear. LangGraph represents it as an explicit state machine: each node is testable, each transition is auditable. When the agent fails, you see exactly which node, with which state.
+- **SQLite over PostgreSQL** — portability for demo. `DatabaseManager` uses SQLAlchemy; swap the connection string to move to Postgres with zero application code changes.
+- **Open-Meteo over synthetic weather** — free, no API key, provides `direct_radiation + diffuse_radiation` (W/m²) — the exact inputs needed for photovoltaic generation estimation. Falls back to deterministic synthetic data if unreachable.
+- **ANEEL bandeiras tarifárias** — the real Brazilian tariff system: Verde / Amarela / Vermelha 1 / Vermelha 2. A cost estimate that ignores bandeiras is wrong by up to 40%.
+- **Aggregated tool output** — `query_energy_usage` returns per-device totals (~15 rows), not raw records (~2,000 rows). Sending raw records to an LLM produces hallucinated answers. The aggregation happens inside the tool, not in the prompt.
+
+---
+
+## Persona: João
+
+All sample data is generated for a realistic Brazilian household:
+
+| Attribute | Value |
+|---|---|
+| Name | João — Python Developer |
+| Location | São Paulo, SP |
+| Work | Home office Mon–Fri |
+| Solar | 4kWp panel (10 × 400W modules) |
+| EV | Tesla Model 3 Long Range |
+| Distributor | Enel SP |
+| Data | 90 days · 6,631 usage records · 1,081 solar records |
+
+Device profiles use `prob_fn: Callable[[datetime], float]` encoding domain knowledge: the Tesla charges stochastically on Tue/Thu/Sun nights (0h–5h, off-peak); the AC has 85% usage probability in January (SP summer) and 20% in May; solar follows a Gaussian curve peaking at noon scaled by monthly irradiance.
+
+---
+
+## Evaluation
+
+The agent is evaluated in two independent dimensions:
+
+**Trajectory evaluation** — for each test scenario, the expected tool calls are defined. A scenario asking "quanto custou meu home office em abril?" must call `query_energy_usage` + `get_electricity_prices`. If the agent responds without those calls, it fails — even if the answer looks correct.
+
+**LLM-as-judge** — a separate LLM scores the final response on four criteria with rubric:
+1. **Grounding** — numbers in the response are traceable to tool output
+2. **Completeness** — recommendation + rationale + estimate + limitations
+3. **Actionability** — the recommendation is concrete and executable
+4. **Honesty** — assumptions are explicit when data is incomplete
+
+Run the evaluation pipeline:
 
 ```bash
-cp .env.example .env
-```
-
-Minimum required variables in `.env`:
-
-```bash
-OPENAI_API_KEY=sk-...
-
-# Optional: Vocareum proxy
-VOCAREUM_API_KEY=...
-ENERGY_ADVISOR_BASE_URL=https://openai.vocareum.com/v1
-
-# Optional: LangSmith tracing
-LANGCHAIN_API_KEY=...
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_PROJECT=energy-advisor
-```
-
-### 4. Model switching
-
-```bash
-# fast (default) → gpt-4o-mini
-ENERGY_ADVISOR_MODEL_PRESET=fast
-
-# quality → gpt-4o
-ENERGY_ADVISOR_MODEL_PRESET=quality
-
-# custom → any model name
-ENERGY_ADVISOR_MODEL_PRESET=custom
-ENERGY_ADVISOR_MODEL=gpt-4-turbo
+cd ecohome_solution
+jupyter nbconvert --to notebook --execute 03_run_and_evaluate.ipynb
 ```
 
 ---
 
-## Run Order
+## Tech Stack
 
-> All notebooks must be run from within `ecohome_solution/`.
+| Layer | Technology |
+|---|---|
+| Agent framework | LangGraph 0.2 · LangChain 0.3 |
+| LLM | OpenAI GPT-4o-mini (default) · GPT-4o (quality mode) |
+| Weather | Open-Meteo API (free, no key required) |
+| Database | SQLite + SQLAlchemy ORM |
+| Vector store | ChromaDB (local, no external infra) |
+| Validation | Pydantic v2 + Pydantic-settings |
+| Dashboard | Streamlit + Plotly |
+| Logging | Loguru (structured) + LangSmith (optional tracing) |
+| Container | Docker + Docker Compose |
+| Tests | pytest · 37 tests across 5 suites |
+| Linting | Ruff |
 
-| Step | Notebook | What it does |
-|---|---|---|
-| 1 | `01_db_setup.ipynb` | Creates SQLite DB and loads sample energy data |
-| 2 | `02_rag_setup.ipynb` | Indexes knowledge-base documents into ChromaDB |
-| 3 | `03_run_and_evaluate.ipynb` | Runs the agent against test scenarios and evaluates results |
+---
 
-**Alternative — run bootstrap as scripts:**
+## Project Structure
+
+```
+ecohome_solution/
+├── app/
+│   ├── streamlit_app.py          ← UI entrypoint
+│   └── components/
+│       ├── charts.py             ← Plotly chart functions
+│       └── chat.py               ← Chat tab + agent calls
+├── energy_advisor/
+│   ├── agent.py                  ← LangGraph ReAct graph
+│   ├── config.py                 ← Pydantic-settings (env vars)
+│   ├── schemas.py                ← Pydantic v2 I/O schemas
+│   ├── prompts.py                ← System prompt with João's context
+│   ├── tools/                    ← 7 @tool decorated functions
+│   └── services/
+│       ├── database.py           ← SQLAlchemy models + DB manager
+│       ├── forecasting.py        ← Open-Meteo + synthetic fallback
+│       ├── pricing.py            ← ANEEL TOU + bandeiras tarifárias
+│       ├── recommendations.py    ← Savings calculation engine
+│       └── retrieval.py          ← ChromaDB RAG pipeline
+├── tests/                        ← 37 unit tests
+├── data/
+│   ├── documents/                ← RAG knowledge base (5 docs)
+│   ├── energy_data.db            ← SQLite (generated on first run)
+│   └── vectorstore/              ← ChromaDB index (generated)
+├── Dockerfile
+├── docker-compose.yml
+└── docker-entrypoint.sh
+```
+
+---
+
+## Manual Setup
 
 ```bash
+cd ecohome_solution
+
+# Install deps (uv recommended)
+uv pip install -r requirements.txt
+
+# Configure
+cp .env.example .env
+# Edit .env and set OPENAI_API_KEY=sk-...
+
+# Bootstrap data (first run only)
 python -m energy_advisor.bootstrap.db_setup
 python -m energy_advisor.bootstrap.sample_data
 python -m energy_advisor.bootstrap.rag_setup
-```
 
----
+# Run dashboard
+streamlit run app/streamlit_app.py
 
-## Running from the CLI
-
-```bash
-cd ecohome_solution
-python main.py "When should I charge my EV tonight?"
-python main.py "How can I maximise solar self-consumption?" --context "5kW system, San Francisco"
-```
-
----
-
-## Running Tests
-
-```bash
-cd ecohome_solution
+# Run tests
 pytest tests/ -v
-# Expected: 37 passed
 ```
 
 ---
 
-## Key Files
+## Dashboard Charts
 
-| File | Role |
+| Chart | What it shows |
 |---|---|
-| `energy_advisor/agent.py` | LangGraph `create_react_agent` wrapper |
-| `energy_advisor/config.py` | Pydantic-settings v2 — all runtime config |
-| `energy_advisor/schemas.py` | Pydantic v2 input/output schemas |
-| `energy_advisor/tools/` | Five LangChain tools: weather, pricing, energy_data, rag, savings |
-| `energy_advisor/services/database.py` | SQLAlchemy models and DB manager |
-| `energy_advisor/bootstrap/` | One-time DB + RAG setup scripts |
-| `main.py` | CLI entrypoint |
-| `tests/` | 37 unit tests across 5 test files |
+| Consumption by Device | Per-device kWh + % of total; EV shown separately (D1 fix) |
+| Solar vs Consumption | Hourly average kW; green area = surplus exported to grid |
+| Enel SP Tariffs | TOU rates by hour; vertical line = current time |
+| Home Office Cost | PC + Monitor + AC office; monthly and annual projections |
 
----
-
-## Dependencies
-
-Runtime deps in `requirements.txt`, dev/test in `requirements-dev.txt`.
-
-| Package | Version | Purpose |
-|---|---|---|
-| `langchain` | `>=0.3.0` | Core LLM framework |
-| `langchain-openai` | `>=0.2.0` | OpenAI integration |
-| `langgraph` | `>=0.2.0` | ReAct agent graph |
-| `openai` | `>=1.40.0` | OpenAI client |
-| `sqlalchemy` | `>=2.0.23` | ORM / SQLite |
-| `chromadb` | `>=0.5.0` | Vector store |
-| `pydantic` | `>=2.0.0` | Data validation |
-| `pydantic-settings` | `>=2.0.0` | Env-based config |
-| `loguru` | `>=0.7.2` | Structured logging |
-
----
-
-## Notes
-
-- Generated artifacts (`energy_data.db`, `vectorstore/`) are git-ignored; only `.gitkeep` is tracked.
-- Architecture decisions and code walkthrough: [`../docs/CODE_REVIEW.md`](../docs/CODE_REVIEW.md)
-- Full project brief: [`../docs/project_overview.md`](../docs/project_overview.md)
-- Obsidian architecture notes: [`../docs/obsidian/`](../docs/obsidian/)
+The "Insight of the Day" card (top of dashboard) combines the current tariff period, real-time irradiance from Open-Meteo, and the cheapest upcoming window — all pre-computed, no agent call required.
