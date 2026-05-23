@@ -31,6 +31,7 @@ from app.components.charts import (
     chart_home_office_report,
     chart_solar_vs_consumption,
     chart_tou_rates,
+    render_bill_analysis,
     render_daily_insight,
     render_ev_summary,
     render_metrics,
@@ -112,6 +113,13 @@ with tab_dash:
             "🟢 Off-peak night (0h–5h): best window for EV charging and heavy appliances.  "
             "🔴 Peak (18h–20h): avoid intensive consumption."
         )
+
+    st.divider()
+
+    # Bill breakdown by controllability — full width
+    st.markdown("#### 💰 Where Your Money Goes")
+    st.caption("Devices grouped by how much control João has over their cost.")
+    render_bill_analysis(settings.db_path, days=days_filter)
 
     st.divider()
 
