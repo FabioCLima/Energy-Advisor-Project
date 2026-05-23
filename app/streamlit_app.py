@@ -1,8 +1,8 @@
 """
 EcoHome Energy Advisor — Streamlit interface.
 
-Run from ecohome_solution/:
-    uv run streamlit run app/streamlit_app.py
+Run from project root:
+    streamlit run app/streamlit_app.py
 """
 from __future__ import annotations
 
