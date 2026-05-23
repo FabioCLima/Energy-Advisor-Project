@@ -82,6 +82,21 @@ class SavingsResult(BaseModel):
     annual_savings_brl: float
 
 
+# ── Usage forecasting ───────────────────────────────────────────────
+
+class UsageForecastPoint(BaseModel):
+    timestamp: str = Field(..., description="ISO datetime (local timezone) at hourly granularity.")
+    predicted_kwh: float = Field(..., ge=0.0, description="Predicted consumption in kWh for that hour.")
+
+
+class UsageForecast(BaseModel):
+    device_type: str | None = Field(None, description="Optional device_type filter used for the forecast.")
+    method: Literal["seasonal_naive"] = "seasonal_naive"
+    horizon_hours: int = Field(..., ge=1, le=168)
+    points: list[UsageForecastPoint]
+    total_predicted_kwh: float = Field(..., ge=0.0)
+
+
 # ── Agent request / response ──────────────────────────────────────────
 
 class AgentRequest(BaseModel):
