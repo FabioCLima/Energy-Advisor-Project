@@ -30,6 +30,7 @@ class WeatherHourly(BaseModel):
 class WeatherForecast(BaseModel):
     location: str
     forecast_days: int
+    data_source: str = "synthetic"
     current: WeatherCurrent
     hourly: list[WeatherHourly]
 
