@@ -22,7 +22,6 @@ from ..agent import EnergyAdvisorAgent
 from ..config import Settings
 from .scenarios import ALL_SCENARIOS, QUICK_SCENARIOS, Scenario
 
-
 # ── Judge output schema ───────────────────────────────────────────────
 
 class JudgeScores(BaseModel):

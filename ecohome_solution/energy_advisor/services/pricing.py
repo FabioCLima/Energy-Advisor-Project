@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-
 # ── Bandeiras tarifárias ANEEL (R$/kWh adicional) ────────────────────
 # Publicadas mensalmente pelo CCEE. Fonte: ANEEL resolução homologatória.
 BANDEIRAS: dict[tuple[int, int], tuple[str, float]] = {
