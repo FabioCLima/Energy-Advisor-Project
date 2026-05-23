@@ -1,0 +1,102 @@
+"""
+Chat component for the EcoHome Energy Advisor.
+Manages message history and agent invocation via Streamlit session state.
+"""
+from __future__ import annotations
+
+import streamlit as st
+
+_SUGGESTED_QUESTIONS = [
+    "How much did my home office cost in the last 30 days?",
+    "When should I charge the Tesla to save the most?",
+    "Which device consumes the most energy at home?",
+    "What is the best time to run the washing machine today?",
+]
+
+
+def _init_state() -> None:
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    if "agent" not in st.session_state:
+        st.session_state.agent = None
+
+
+def _load_agent() -> object | None:
+    if st.session_state.agent is not None:
+        return st.session_state.agent
+    try:
+        from energy_advisor import EnergyAdvisorAgent
+        st.session_state.agent = EnergyAdvisorAgent()
+        return st.session_state.agent
+    except Exception:
+        return None
+
+
+def _extract_tools_used(result: dict) -> list[str]:
+    """Extract tool names from the LangGraph message history."""
+    tools: list[str] = []
+    for msg in result.get("messages", []):
+        if hasattr(msg, "name") and msg.name and msg.name not in tools:
+            tools.append(msg.name)
+    return tools
+
+
+def render_chat() -> None:
+    _init_state()
+
+    agent = _load_agent()
+    if agent is None:
+        st.warning(
+            "Agent not initialized. Check that `OPENAI_API_KEY` is set in your `.env` file.",
+            icon="🔑",
+        )
+
+    # Render message history
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            if msg.get("tools"):
+                st.caption("🔧 Tools used: " + " · ".join(f"`{t}`" for t in msg["tools"]))
+
+    # Suggested questions — shown only on empty history
+    if not st.session_state.messages:
+        st.markdown("**Start with one of these questions:**")
+        cols = st.columns(2)
+        for i, q in enumerate(_SUGGESTED_QUESTIONS):
+            if cols[i % 2].button(q, key=f"sugg_{i}", use_container_width=True):
+                st.session_state["_pending"] = q
+                st.rerun()
+
+    if "_pending" in st.session_state:
+        _handle_question(st.session_state.pop("_pending"), agent)
+
+    # User input
+    if question := st.chat_input("Ask something about your energy usage..."):
+        _handle_question(question, agent)
+
+
+def _handle_question(question: str, agent: object | None) -> None:
+    st.session_state.messages.append({"role": "user", "content": question})
+    with st.chat_message("user"):
+        st.markdown(question)
+
+    with st.chat_message("assistant"):
+        if agent is None:
+            answer = "Agent unavailable. Please set the API key and restart."
+            tools  = []
+        else:
+            with st.spinner("Querying data and tools..."):
+                try:
+                    result = agent.invoke(question)
+                    msgs   = result.get("messages", [])
+                    answer = msgs[-1].content if msgs else "No response."
+                    tools  = _extract_tools_used(result)
+                except Exception as e:
+                    answer = f"❌ Agent error: {e}"
+                    tools  = []
+
+        st.markdown(answer)
+        if tools:
+            st.caption("🔧 Tools used: " + " · ".join(f"`{t}`" for t in tools))
+
+    st.session_state.messages.append({"role": "assistant", "content": answer, "tools": tools})
