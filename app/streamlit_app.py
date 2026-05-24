@@ -117,11 +117,14 @@ with tab_dash:
 
     # U2: Left column = device breakdown + home office
     #     Right column = time-series analysis (solar + rates)
-    col_left, col_right = st.columns(2)
+    col_left, col_right = st.columns([1.05, 1.15], gap="large")
 
     with col_left:
         st.markdown("#### Top Consumers")
+        st.caption(f"Highest non-EV loads in the selected {days_filter}-day window.")
         render_top_consumers(settings.db_path, days=days_filter)
+        st.markdown("##### Consumption by Device")
+        st.caption("EV charging is shown separately below so the household loads stay readable.")
         st.plotly_chart(
             chart_consumption_by_device(settings.db_path, days=days_filter),
             width="stretch",
@@ -133,6 +136,8 @@ with tab_dash:
 
     with col_right:
         # Solar historical chart
+        st.markdown("#### Solar vs Consumption")
+        st.caption(f"Hourly average across the selected {days_filter}-day window.")
         st.plotly_chart(
             chart_solar_vs_consumption(settings.db_path, days=days_filter),
             width="stretch",
