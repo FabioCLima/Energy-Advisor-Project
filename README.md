@@ -4,8 +4,9 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-ReAct_Agent-6B48FF?logo=chainlink&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?logo=streamlit&logoColor=white)
 ![Open-Meteo](https://img.shields.io/badge/Open--Meteo-Real_Weather-4CAF50?logo=cloudflarepages&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-76_passed-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-85_passed-brightgreen?logo=pytest&logoColor=white)
 ![Coverage](https://img.shields.io/badge/Coverage-87%25-brightgreen?logo=pytest&logoColor=white)
+![CI](https://github.com/FabioCLima/Energy-Advisor-Project/actions/workflows/ci.yml/badge.svg)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
 > AI-powered energy advisor for Brazilian households. Ask in natural language: *"Should I charge my Tesla now or wait for solar generation?"* The agent reasons over real consumption data, live weather, and ANEEL energy rates to give a grounded, quantified answer.
@@ -56,7 +57,7 @@ Manually cross-referencing these to answer "what's the cheapest time to charge m
 
 ## What the Agent Does
 
-The LangGraph ReAct agent coordinates **8 specialized tools** and reasons over multiple sources before responding:
+The LangGraph ReAct agent coordinates **9 specialized tools** and reasons over multiple sources before responding:
 
 | Tool | Data source | What it enables |
 |---|---|---|
@@ -68,6 +69,7 @@ The LangGraph ReAct agent coordinates **8 specialized tools** and reasons over m
 | `calculate_energy_savings` | Savings math engine | "How much would I save shifting to off-peak?" |
 | `get_recent_energy_summary` | SQLite aggregate | Context for open-ended questions |
 | `predict_energy_usage` | SQLite + baseline/ML model artifact | "What will my usage look like tomorrow?" |
+| `optimize_energy_schedule` | Forecast router + pricing + heuristics | "What should I shift to save over the next 30 days?" |
 
 **Example exchange:**
 
@@ -86,7 +88,7 @@ flowchart TD
     Agent["🤖 EnergyAdvisorAgent\nLangGraph ReAct loop"]
     LLM["🧠 GPT-4o-mini\nReasoning & tool selection"]
 
-    subgraph Tools["🔧 8 Specialised Tools"]
+    subgraph Tools["🔧 9 Specialised Tools"]
         T1["query_energy_usage"]
         T2["query_solar_generation"]
         T3["get_electricity_prices"]
@@ -95,6 +97,7 @@ flowchart TD
         T6["calculate_energy_savings"]
         T7["get_recent_energy_summary"]
         T8["predict_energy_usage"]
+        T9["optimize_energy_schedule"]
     end
 
     subgraph Data["💾 Data Layer"]
@@ -113,6 +116,9 @@ flowchart TD
     T4 --> API
     T3 --> ANEEL
     T6 --> ANEEL
+    T8 --> DB
+    T9 --> ANEEL
+    T9 --> DB
     Tools -->|observation| Agent
     Agent -->|final answer| UI
     UI -->|rendered response| User
@@ -124,7 +130,7 @@ Six-layer design — each layer testable and replaceable independently:
 |---|---|---|
 | 1. Interaction | Streamlit | Dashboard + streaming chat |
 | 2. Orchestration | LangGraph ReAct | Reason → Act → Observe loop |
-| 3. Tools | 7 `@tool` functions | Isolated, typed, directly testable |
+| 3. Tools | 9 `@tool` functions | Isolated, typed, directly testable |
 | 4. Services | Business logic | database · pricing · forecasting · retrieval |
 | 5. Storage | SQLite + ChromaDB | Time-series + vector embeddings |
 | 6. Observability | Loguru + LangSmith | Structured logs + optional trace UI |
@@ -134,7 +140,7 @@ Six-layer design — each layer testable and replaceable independently:
 - **LangGraph over LCEL** — the ReAct loop (reason → call tool → reason again) is not linear. LangGraph represents it as an explicit state machine: each node is testable, each transition is auditable. When the agent fails, you see exactly which node, with which state.
 - **SQLite over PostgreSQL** — portability for demo. `DatabaseManager` uses SQLAlchemy; swap the connection string to move to Postgres with zero application code changes.
 - **Open-Meteo over synthetic weather** — free, no API key, provides `direct_radiation + diffuse_radiation` (W/m²) — the exact inputs needed for photovoltaic generation estimation. Falls back to deterministic synthetic data if unreachable.
-- **ANEEL bandeiras tarifárias** — the official Brazilian rate-flag system: Verde / Amarela / Vermelha 1 / Vermelha 2. A cost estimate that ignores bandeiras is wrong by up to 40%.
+- **ANEEL energy rate provenance** — rate flags and distributor pricing are resolved through a provenance-aware service: in-memory cache → disk cache → external fetch (when enabled) → bundled fallback. The dashboard exposes `source`, `fetched_at`, and `fallback_used` instead of implying real-time freshness when the external source is unavailable.
 - **Aggregated tool output** — `query_energy_usage` returns per-device totals (~15 rows), not raw records (~2,000 rows). Sending raw records to an LLM produces hallucinated answers. The aggregation happens inside the tool, not in the prompt.
 
 ---
@@ -169,12 +175,39 @@ The agent is evaluated in two independent dimensions:
 3. **Actionability** — the recommendation is concrete and executable
 4. **Honesty** — assumptions are explicit when data is incomplete
 
+Latest local run on **May 24, 2026**:
+
+| Mode | Result | Notes |
+|---|---|---|
+| Trajectory only | `12/12` scenarios passed | `0` execution errors, `8.93s` avg/scenario |
+| LLM-as-judge | `4.31 / 5.00` overall | Grounding `4.33`, Completeness `4.42`, Actionability `4.00`, Honesty `4.50` |
+
+Lowest-scoring scenarios from the judged run:
+- `current_tariff_period` (`3.5/5`) — answer needs clearer source/limitations language.
+- `recent_summary_24h` (`3.25/5`) — grounded but not actionable enough.
+- `predict_usage_tomorrow` (`3.25/5`) — forecast is detailed, but recommendation/method explanation can be stronger.
+
 Run the evaluation pipeline:
 
 ```bash
 python -m energy_advisor.evaluation.runner --output eval_report.json
-# Add --quick for 3 scenarios only; --no-judge to skip LLM scoring
+# Add --quick for 4 scenarios only; --no-judge to skip LLM scoring
 ```
+
+---
+
+## ML Model
+
+The forecasting layer uses `HistGradientBoostingRegressor` over lagged hourly usage, rolling means, and cyclical hour / day-of-week features. Training runs on roughly 90 days of hourly history per device family and saves a `.joblib` artifact with the fitted estimator, training window metadata, and hold-out validation metrics.
+
+Latest local hold-out evaluation (last 7 days) shows why the dashboard now exposes model quality instead of assuming the ML path is always better:
+
+| Forecast target | Model RMSE | Baseline RMSE | Model MAE | Baseline MAE | Takeaway |
+|---|---|---|---|---|---|
+| `all` | `0.8047` | `0.8420` | `0.4678` | `0.4322` | Better RMSE, worse MAE |
+| `ev` | `0.4615` | `0.3458` | `0.1497` | `0.1170` | Baseline still wins |
+
+Known limitation: the model forecasts recursively, so error accumulates with longer horizons. Because of that, the Streamlit forecast section shows both the selected method and its saved validation metrics before presenting the curve.
 
 ---
 
@@ -191,7 +224,7 @@ python -m energy_advisor.evaluation.runner --output eval_report.json
 | Dashboard | Streamlit + Plotly |
 | Logging | Loguru (structured) + LangSmith (optional tracing) |
 | Container | Docker + Docker Compose |
-| Tests | pytest · 69 tests · 87% coverage on core |
+| Tests | pytest · 85 tests · 87% coverage on core |
 | Linting | Ruff |
 
 ---
@@ -210,14 +243,18 @@ Energy-Advisor-Project/
 │   ├── config.py                 ← Pydantic-settings (env vars)
 │   ├── schemas.py                ← Pydantic v2 I/O schemas
 │   ├── prompts.py                ← System prompt with João's context
-│   ├── tools/                    ← 7 @tool decorated functions
+│   ├── tools/                    ← 9 @tool decorated functions
 │   └── services/
 │       ├── database.py           ← SQLAlchemy models + DB manager
+│       ├── aneel_client.py       ← Provenance-aware ANEEL cache/fallback client
 │       ├── forecasting.py        ← Open-Meteo + synthetic fallback
-│       ├── pricing.py            ← ANEEL TOU + bandeiras tarifárias
+│       ├── forecast_router.py    ← Shared baseline/ML routing
+│       ├── optimizer.py          ← Heuristic schedule optimization
+│       ├── pricing.py            ← Energy rates + ANEEL provenance contract
 │       ├── recommendations.py    ← Savings calculation engine
-│       └── retrieval.py          ← ChromaDB RAG pipeline
-├── tests/                        ← 69 unit tests (87% coverage)
+│       ├── retrieval.py          ← ChromaDB RAG pipeline
+│       └── usage_forecasting_ml.py ← HistGradientBoostingRegressor + evaluation
+├── tests/                        ← 85 unit tests (87% coverage)
 ├── data/
 │   ├── documents/                ← RAG knowledge base (5 docs)
 │   ├── energy_data.db            ← SQLite (generated on first run)
