@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from ..agent import EnergyAdvisorAgent
 from ..config import Settings
+from ..observability import estimate_llm_cost
 from .scenarios import ALL_SCENARIOS, QUICK_SCENARIOS, Scenario
 
 # ── Judge output schema ───────────────────────────────────────────────
@@ -123,8 +124,11 @@ def evaluate_scenario(
         error = str(exc)
         logger.error("Scenario {} failed: {}", scenario.id, exc)
 
+    cost_estimate = estimate_llm_cost(settings.selected_model(), scenario.question, final_answer)
     missing_tools = [t for t in scenario.required_tools if t not in called_tools]
     trajectory_pass = len(missing_tools) == 0
+    over_latency_budget = elapsed > settings.max_request_latency_s
+    over_cost_budget = cost_estimate.estimated_cost_usd > settings.max_request_cost_usd
 
     judge_scores: dict[str, Any] | None = None
     if use_judge and final_answer and not error:
@@ -152,6 +156,11 @@ def evaluate_scenario(
         "missing_tools":   missing_tools,
         "final_answer":    final_answer,
         "elapsed_s":       elapsed,
+        "input_tokens_estimate": cost_estimate.input_tokens,
+        "output_tokens_estimate": cost_estimate.output_tokens,
+        "estimated_cost_usd": cost_estimate.estimated_cost_usd,
+        "over_latency_budget": over_latency_budget,
+        "over_cost_budget": over_cost_budget,
         "error":           error,
         "judge_scores":    judge_scores,
     }
@@ -164,12 +173,20 @@ def compute_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
     traj_pass = sum(1 for r in results if r["trajectory_pass"])
     scored = [r["judge_scores"] for r in results if r.get("judge_scores")]
 
+    cost_values = [r.get("estimated_cost_usd", 0.0) for r in results]
+    latency_violations = sum(1 for r in results if r.get("over_latency_budget"))
+    cost_violations = sum(1 for r in results if r.get("over_cost_budget"))
     summary: dict[str, Any] = {
         "total_scenarios":        total,
         "trajectory_pass_count":  traj_pass,
         "trajectory_pass_rate":   round(traj_pass / total, 2) if total else 0,
         "errors":                 sum(1 for r in results if r["error"]),
         "avg_elapsed_s":          round(sum(r["elapsed_s"] for r in results) / total, 2) if total else 0,
+        "total_estimated_cost_usd": round(sum(cost_values), 6),
+        "avg_estimated_cost_usd": round(sum(cost_values) / total, 6) if total else 0,
+        "latency_budget_violations": latency_violations,
+        "cost_budget_violations": cost_violations,
+        "quality_gates_pass": (latency_violations == 0 and cost_violations == 0 and sum(1 for r in results if r["error"]) == 0),
     }
 
     if scored:
@@ -231,6 +248,8 @@ def _print_summary(report: dict[str, Any]) -> None:
     print(f"Model     : {report['model']}")
     print(f"Scenarios : {s['total_scenarios']}  |  Errors: {s['errors']}")
     print(f"Avg time  : {s['avg_elapsed_s']}s per scenario")
+    print(f"Est. cost : ${s.get('total_estimated_cost_usd', 0):.6f} total")
+    print(f"Gates     : {'PASS' if s.get('quality_gates_pass') else 'CHECK'}")
     print()
     print(f"Trajectory pass rate : {s['trajectory_pass_rate']:.0%}  "
           f"({s['trajectory_pass_count']}/{s['total_scenarios']})")
