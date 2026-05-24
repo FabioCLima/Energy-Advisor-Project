@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from langchain_core.runnables import RunnableConfig, RunnableLambda
-from langserve import add_routes
+from fastapi.responses import StreamingResponse
+from langchain_core.messages import AIMessage
 from pydantic import BaseModel, Field
 
 from energy_advisor import EnergyAdvisorAgent
@@ -20,10 +21,14 @@ class AdvisorRequest(BaseModel):
     question: str = Field(..., description="Natural-language question from the user.")
     context: str | None = Field(None, description="Optional extra context or constraints.")
 
-    # Optional identifiers used only for observability (LangSmith tags/metadata).
     user_id: str | None = Field(None, description="Optional user identifier for tracing.")
     session_id: str | None = Field(None, description="Optional session identifier for tracing.")
     request_id: str | None = Field(None, description="Optional request identifier for tracing.")
+
+
+class AdvisorResponse(BaseModel):
+    answer: str
+    tools_used: list[str] = Field(default_factory=list)
 
 
 _agent: EnergyAdvisorAgent | None = None
@@ -36,59 +41,39 @@ def _get_agent() -> EnergyAdvisorAgent:
     return _agent
 
 
-def _merge_trace_config(inp: AdvisorRequest, base: RunnableConfig | None) -> RunnableConfig:
-    cfg: dict[str, Any] = dict(base or {})
-
-    tags = list(cfg.get("tags", []))
-    tags.extend(["app:energy_advisor", "surface:langserve"])
-    if inp.user_id:
-        tags.append(f"user:{inp.user_id}")
-    if inp.session_id:
-        tags.append(f"session:{inp.session_id}")
-    cfg["tags"] = tags
-
-    metadata = dict(cfg.get("metadata", {}))
-    if inp.user_id:
-        metadata["user_id"] = inp.user_id
-    if inp.session_id:
-        metadata["session_id"] = inp.session_id
-    if inp.request_id:
-        metadata["request_id"] = inp.request_id
-    cfg["metadata"] = metadata
-
-    cfg.setdefault("run_name", "EnergyAdvisorAgent")
-    return cfg  # type: ignore[return-value]
-
-
-def _advisor(inp: AdvisorRequest, config: RunnableConfig | None = None) -> Iterator[str]:
-    """Runnable entrypoint.
-
-    Implemented as a generator so LangServe can stream tokens via SSE.
-    RunnableLambda.invoke() will consume the generator and return the full string.
-    """
-    agent = _get_agent()
-    trace_config = _merge_trace_config(inp, config)
-    yield from agent.stream(inp.question, context=inp.context, config=trace_config)
+def _build_config(req: AdvisorRequest) -> dict[str, Any]:
+    tags = ["app:energy_advisor", "surface:api"]
+    metadata: dict[str, Any] = {}
+    if req.user_id:
+        tags.append(f"user:{req.user_id}")
+        metadata["user_id"] = req.user_id
+    if req.session_id:
+        tags.append(f"session:{req.session_id}")
+        metadata["session_id"] = req.session_id
+    if req.request_id:
+        metadata["request_id"] = req.request_id
+    return {"tags": tags, "metadata": metadata, "run_name": "EnergyAdvisorAgent"}
 
 
 settings = Settings()
 ensure_demo_assets(settings=settings, ensure_vectorstore_index=False)
 
-
 app = FastAPI(
     title="EcoHome Energy Advisor API",
-    version="0.1.0",
-    description="FastAPI + LangServe wrapper around the EcoHome Energy Advisor (LangGraph ReAct).",
+    version="0.3.0",
+    description=(
+        "FastAPI wrapper around the EcoHome Energy Advisor (LangGraph ReAct). "
+        "POST /advisor/invoke for a full response; POST /advisor/stream for SSE token streaming."
+    ),
 )
 
-# Streamlit community cloud and local frontends benefit from permissive CORS.
-# Tighten this list for production deployments.
+# Restrict origins for production; permissive here for demo + Streamlit Cloud frontend.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
-    allow_headers=["*"] ,
+    allow_headers=["*"],
 )
 
 
@@ -97,9 +82,44 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-# Expose the agent runnable under /advisor/* (invoke/stream/batch/etc.).
-add_routes(
-    app,
-    RunnableLambda(_advisor).with_types(input_type=AdvisorRequest, output_type=str),
-    path="/advisor",
-)
+@app.post("/advisor/invoke", response_model=AdvisorResponse)
+def invoke(req: AdvisorRequest) -> AdvisorResponse:
+    """Run the agent synchronously and return the final answer."""
+    try:
+        agent = _get_agent()
+        result = agent.invoke(req.question, context=req.context, config=_build_config(req))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    final_answer = next(
+        (m.content for m in reversed(result.get("messages", []))
+         if isinstance(m, AIMessage) and not m.tool_calls),
+        "",
+    )
+    tools_used = [
+        tc["name"]
+        for m in result.get("messages", [])
+        if isinstance(m, AIMessage)
+        for tc in (m.tool_calls or [])
+    ]
+    return AdvisorResponse(answer=final_answer, tools_used=tools_used)
+
+
+@app.post("/advisor/stream")
+def stream(req: AdvisorRequest) -> StreamingResponse:
+    """Stream the agent response token-by-token via Server-Sent Events (SSE).
+
+    Each event carries a JSON payload: {"text": "<chunk>"}.
+    The stream terminates with the sentinel event: data: [DONE]
+    """
+    def _generate() -> Iterator[str]:
+        try:
+            agent = _get_agent()
+            for chunk in agent.stream(req.question, context=req.context, config=_build_config(req)):
+                yield f"data: {json.dumps({'text': chunk})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+        finally:
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(_generate(), media_type="text/event-stream")
