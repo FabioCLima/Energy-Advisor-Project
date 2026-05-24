@@ -14,14 +14,12 @@ Design constraints (scope):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 
 from loguru import logger
 
-from .pricing import generate_time_of_use_prices
 from .forecast_router import route_usage_forecast
+from .pricing import generate_time_of_use_prices
 from .usage_forecasting import UsageForecastParams
-
 
 # ── Forecast routing ───────────────────────────────────────────────
 
