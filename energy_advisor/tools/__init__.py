@@ -4,6 +4,7 @@ from .energy_data import (
     query_solar_generation,
 )
 from .forecast import predict_energy_usage
+from .optimize import optimize_energy_schedule
 from .pricing import get_electricity_prices
 from .rag import search_energy_tips
 from .savings import calculate_energy_savings
@@ -18,6 +19,7 @@ TOOL_KIT = [
     search_energy_tips,
     calculate_energy_savings,
     predict_energy_usage,
+    optimize_energy_schedule,
 ]
 
 __all__ = ["TOOL_KIT"]
