@@ -45,3 +45,7 @@ langchain-classic>=1.0.0
 fastapi>=0.110.0
 langserve[server]>=0.3.0
 uvicorn>=0.30.0
+
+# Dashboard
+streamlit>=1.45.0
+plotly>=5.24.0

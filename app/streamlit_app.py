@@ -26,6 +26,7 @@ from app.components.charts import (
     render_top_consumers,
 )
 from app.components.chat import render_chat
+from energy_advisor.bootstrap.runtime import ensure_demo_assets
 from energy_advisor.config import Settings
 from energy_advisor.services.pricing import generate_time_of_use_prices
 
@@ -37,6 +38,14 @@ st.set_page_config(
 )
 
 settings = Settings()
+
+
+@st.cache_resource(show_spinner="Preparing demo data and local models…")
+def _prepare_runtime() -> None:
+    ensure_demo_assets(settings=settings, ensure_vectorstore_index=False)
+
+
+_prepare_runtime()
 
 # ── Sidebar ───────────────────────────────────────────────────────────
 with st.sidebar:

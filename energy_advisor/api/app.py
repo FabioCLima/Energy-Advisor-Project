@@ -10,6 +10,8 @@ from langserve import add_routes
 from pydantic import BaseModel, Field
 
 from energy_advisor import EnergyAdvisorAgent
+from energy_advisor.bootstrap.runtime import ensure_demo_assets
+from energy_advisor.config import Settings
 
 
 class AdvisorRequest(BaseModel):
@@ -67,6 +69,10 @@ def _advisor(inp: AdvisorRequest, config: RunnableConfig | None = None) -> Itera
     agent = _get_agent()
     trace_config = _merge_trace_config(inp, config)
     yield from agent.stream(inp.question, context=inp.context, config=trace_config)
+
+
+settings = Settings()
+ensure_demo_assets(settings=settings, ensure_vectorstore_index=False)
 
 
 app = FastAPI(
