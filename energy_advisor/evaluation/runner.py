@@ -257,7 +257,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run EcoHome agent evaluation pipeline.")
     parser.add_argument("--output", default="eval_report.json", help="Path to output JSON report")
     parser.add_argument("--no-judge", action="store_true", help="Skip LLM-as-judge (trajectory only)")
-    parser.add_argument("--quick", action="store_true", help="Run 3 scenarios instead of all 10")
+    parser.add_argument("--quick", action="store_true", help="Run 4 scenarios instead of all 12")
     args = parser.parse_args()
 
     report = run_evaluation(
