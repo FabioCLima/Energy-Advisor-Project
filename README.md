@@ -4,10 +4,10 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-ReAct_Agent-6B48FF?logo=chainlink&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?logo=streamlit&logoColor=white)
 ![Open-Meteo](https://img.shields.io/badge/Open--Meteo-Real_Weather-4CAF50?logo=cloudflarepages&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-85_passed-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-87_passed-brightgreen?logo=pytest&logoColor=white)
 ![Coverage](https://img.shields.io/badge/Coverage-87%25-brightgreen?logo=pytest&logoColor=white)
-![CI](https://github.com/FabioCLima/Energy-Advisor-Project/actions/workflows/ci.yml/badge.svg)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![CI](https://github.com/FabioCLima/Energy-Advisor-Project/actions/workflows/ci.yml/badge.svg?branch=master)
+![Docker](https://img.shields.io/badge/GHCR-ghcr.io%2Ffabiolima%2Fenergy--advisor-2496ED?logo=docker&logoColor=white)
 
 > AI-powered energy advisor for Brazilian households. Ask in natural language: *"Should I charge my Tesla now or wait for solar generation?"* The agent reasons over real consumption data, live weather, and ANEEL energy rates to give a grounded, quantified answer.
 
@@ -25,6 +25,13 @@ docker compose up
 ```
 
 Open **http://localhost:8501** — the container bootstraps João's demo dataset and local forecast artifacts on first run.
+
+**Or pull the pre-built image directly:**
+
+```bash
+docker pull ghcr.io/fabiolima/energy-advisor-project:latest
+docker run -e OPENAI_API_KEY=sk-... -p 8501:8501 ghcr.io/fabiolima/energy-advisor-project:latest
+```
 
 > No Docker? See [manual setup](#manual-setup) below.
 > Cloud deploy notes: [Streamlit Cloud](deploy/streamlit/README.md) · [AWS App Runner](deploy/aws/README.md)
