@@ -32,33 +32,59 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract GHCR metadata
+        id: ghcr-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,format=short
+
+      - name: Build and push to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.ghcr-meta.outputs.tags }}
+          labels: ${{ steps.ghcr-meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Configure AWS credentials (OIDC)
+        id: aws-creds
+        continue-on-error: true
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Log in to Amazon ECR
-        id: ecr-login
+        if: steps.aws-creds.outcome == 'success'
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Extract metadata (tags, labels)
-        id: meta
+      - name: Extract ECR metadata
+        if: steps.aws-creds.outcome == 'success'
+        id: ecr-meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}
-            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          images: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-,format=short
 
-      - name: Build and push to GHCR and ECR
+      - name: Build and push to ECR (optional AWS deploy target)
+        if: steps.aws-creds.outcome == 'success'
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.ecr-meta.outputs.tags }}
+          labels: ${{ steps.ecr-meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+
+      - name: Report skipped ECR push
+        if: steps.aws-creds.outcome != 'success'
+        run: |
+          echo "AWS OIDC role could not be assumed; GHCR image was still built and pushed."
+          echo "Fix AWS_ROLE_ARN trust policy / sts:AssumeRoleWithWebIdentity to re-enable ECR publishing."
