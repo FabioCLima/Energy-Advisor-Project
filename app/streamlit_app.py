@@ -14,6 +14,7 @@ from app.components.charts import (
     chart_consumption_by_device,
     chart_home_office_report,
     chart_solar_vs_consumption,
+    build_dashboard_export_csv,
     chart_tou_rates,
     render_bill_analysis,
     render_daily_insight,
@@ -22,6 +23,7 @@ from app.components.charts import (
     render_ml_forecast_section,
     render_recommendations,
     render_solar_forecast_today,
+    render_top_consumers,
 )
 from app.components.chat import render_chat
 from energy_advisor.config import Settings
@@ -73,6 +75,13 @@ with st.sidebar:
     st.divider()
 
     days_filter = st.slider("Analysis period (days)", 7, 90, 30, step=7)
+    st.download_button(
+        "Export dashboard CSV",
+        data=build_dashboard_export_csv(settings.db_path, days_filter),
+        file_name=f"ecohome_dashboard_{days_filter}d.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
     st.divider()
     st.caption("v0.2.0 · feat/portfolio-refactor")
 
@@ -82,7 +91,7 @@ tab_dash, tab_chat = st.tabs(["📊 Dashboard", "💬 Ask the Advisor"])
 # ── Dashboard tab ─────────────────────────────────────────────────────
 with tab_dash:
     st.header("Energy Dashboard — João")
-    st.caption(f"Distributor: Enel SP · Last {days_filter} days")
+    st.caption(f"Distributor: Enel SP · Analysis window: last {days_filter} days")
 
     render_metrics(settings.db_path, days=days_filter)
     st.divider()
@@ -96,6 +105,8 @@ with tab_dash:
     col_left, col_right = st.columns(2)
 
     with col_left:
+        st.markdown("#### Top Consumers")
+        render_top_consumers(settings.db_path, days=days_filter)
         st.plotly_chart(
             chart_consumption_by_device(settings.db_path, days=days_filter),
             width="stretch",

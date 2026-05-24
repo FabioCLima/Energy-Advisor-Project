@@ -30,6 +30,21 @@ _WMO_CONDITION: dict[int, str] = {
 }
 
 
+def _sanitize_temperature_c(value: float | int | None) -> float | None:
+    """Return plausible Sao Paulo ambient temperature for dashboard display.
+
+    Open-Meteo can occasionally return missing or obviously wrong values in
+    degraded network/test conditions. For this demo, hide implausible readings
+    instead of surfacing impossible temperatures like -15°C for Sao Paulo.
+    """
+    if value is None:
+        return None
+    temp = float(value)
+    if temp < 5.0 or temp > 45.0:
+        return None
+    return round(temp, 1)
+
+
 def _fetch_open_meteo(lat: float, lon: float, days: int) -> dict:
     params = {
         "latitude": lat,
@@ -61,7 +76,7 @@ def _parse_open_meteo(raw: dict, days: int) -> dict:
         wmo = int(h["weathercode"][i] or 0)
         hourly.append({
             "hour":             hour,
-            "temperature_c":    round(h["temperature_2m"][i] or 0.0, 1),
+            "temperature_c":    _sanitize_temperature_c(h["temperature_2m"][i]),
             "condition":        _WMO_CONDITION.get(wmo, "partly_cloudy"),
             "solar_irradiance": round(irradiance, 1),
             "humidity":         int(h["relative_humidity_2m"][i] or 50),
@@ -76,7 +91,7 @@ def _parse_open_meteo(raw: dict, days: int) -> dict:
         "forecast_days": days,
         "data_source":   "open_meteo",
         "current": {
-            "temperature_c": current["temperature_c"],
+            "temperature_c": current.get("temperature_c"),
             "condition":     current["condition"],
             "humidity":      current["humidity"],
             "wind_speed":    current["wind_speed"],
@@ -131,7 +146,7 @@ def _synthetic_fallback(location: str, days: int) -> dict:
 
         hourly.append({
             "hour":             hour,
-            "temperature_c":    round(temp, 1),
+            "temperature_c":    _sanitize_temperature_c(temp),
             "condition":        condition,
             "solar_irradiance": round(irradiance, 1),
             "humidity":         int(max(10, min(100, base_humidity + rng.randint(-5, 5)))),
@@ -144,7 +159,7 @@ def _synthetic_fallback(location: str, days: int) -> dict:
         "forecast_days": days,
         "data_source":   "synthetic",
         "current": {
-            "temperature_c": hourly[now_h]["temperature_c"],
+            "temperature_c": hourly[now_h].get("temperature_c"),
             "condition":     condition,
             "humidity":      hourly[now_h]["humidity"],
             "wind_speed":    hourly[now_h]["wind_speed"],
