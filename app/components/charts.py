@@ -12,10 +12,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from energy_advisor.services.database import DatabaseManager
-from energy_advisor.services.forecasting import generate_hourly_forecast
 from energy_advisor.services.forecast_router import route_usage_forecast
+from energy_advisor.services.forecasting import generate_hourly_forecast
 from energy_advisor.services.pricing import generate_time_of_use_prices
-from energy_advisor.services.usage_forecasting import UsageForecastParams, load_hourly_usage_series, seasonal_naive_usage_forecast
+from energy_advisor.services.usage_forecasting import (
+    UsageForecastParams,
+    load_hourly_usage_series,
+    seasonal_naive_usage_forecast,
+)
 
 # ── Constants ─────────────────────────────────────────────────────────
 
@@ -641,29 +645,49 @@ def chart_bill_by_controllability(db_path: str, days: int = 30) -> go.Figure:
           .agg(cost_brl=("cost_brl", "sum"), kwh=("kwh", "sum"))
           .sort_values("cost_brl", ascending=True)
     )
-    agg["label"] = agg["cost_brl"].apply(lambda v: f"R$ {v:,.2f}")
+    total_cost = max(float(agg["cost_brl"].sum()), 1.0)
+    max_cost = max(float(agg["cost_brl"].max()), 1.0)
+    agg["share"] = agg["cost_brl"] / total_cost
+    agg["label"] = agg.apply(
+        lambda row: f"R$ {row['cost_brl']:,.2f} · {row['share']:.0%}",
+        axis=1,
+    )
 
     fig = px.bar(
-        agg, x="cost_brl", y="device_name", orientation="h",
+        agg,
+        x="cost_brl",
+        y="device_name",
+        orientation="h",
         color="controllability",
         color_discrete_map=_CTRL_COLOR,
         text="label",
-        hover_data={"kwh": ":.1f", "cost_brl": ":.2f"},
+        hover_data={"kwh": ":.1f", "cost_brl": ":.2f", "share": ":.1%"},
         labels={
             "cost_brl":       "Cost (R$)",
             "device_name":    "",
             "controllability": "Category",
             "kwh":            "Consumption (kWh)",
+            "share":          "Share of bill",
         },
-        title=f"Where Your Money Goes — last {days} days",
     )
-    fig.update_traces(textposition="outside")
+    fig.update_traces(textposition="outside", cliponaxis=False)
     fig.update_layout(
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        xaxis=dict(range=[0, max_cost * 1.18], title="Cost (R$)", gridcolor="rgba(148,163,184,0.18)"),
+        yaxis=dict(title="", automargin=True),
+        legend=dict(
+            title="",
+            orientation="h",
+            yanchor="top",
+            y=-0.22,
+            xanchor="left",
+            x=0,
+            itemwidth=30,
+        ),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
-        height=420,
-        margin=dict(l=10, r=80, t=60, b=20),
+        height=max(420, 120 + len(agg) * 34),
+        margin=dict(l=24, r=150, t=18, b=96),
+        uniformtext=dict(minsize=11, mode="show"),
     )
     return fig
 
@@ -693,6 +717,24 @@ def render_bill_analysis(db_path: str, days: int = 30) -> None:
     ev_kwh = df[df["controllability"] == "EV Charging"]["kwh"].sum()
     ev_avg_rate = (ev / ev_kwh) if ev_kwh > 0 else 0.656
     ev_savings = max(0.0, ev_kwh * (ev_avg_rate - _OFF_PEAK_RATE))
+
+    by_device = (
+        df.groupby(["device_name", "controllability"], as_index=False)
+          .agg(cost_brl=("cost_brl", "sum"), kwh=("kwh", "sum"))
+          .sort_values("cost_brl", ascending=False)
+    )
+    total_cost = max(float(by_device["cost_brl"].sum()), 1.0)
+
+    st.caption(f"Cost distribution by device for the selected {days}-day period.")
+    top_cols = st.columns(3)
+    for col, (_, row) in zip(top_cols, by_device.head(3).iterrows(), strict=False):
+        share = row["cost_brl"] / total_cost
+        col.metric(
+            row["device_name"],
+            f"R$ {row['cost_brl']:,.2f}",
+            delta=f"{share:.0%} of bill",
+            help=f"{row['controllability']} · {row['kwh']:.1f} kWh",
+        )
 
     st.plotly_chart(
         chart_bill_by_controllability(db_path, days),
