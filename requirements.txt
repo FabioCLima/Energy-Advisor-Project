@@ -40,3 +40,8 @@ requests>=2.31.0
 # Hybrid RAG — BM25 keyword retrieval + RRF fusion
 rank-bm25>=0.2.2
 langchain-classic>=1.0.0
+
+# API server (FastAPI + LangServe)
+fastapi>=0.110.0
+langserve[server]>=0.3.0
+uvicorn>=0.30.0

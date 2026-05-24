@@ -12,6 +12,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
@@ -127,15 +128,28 @@ class EnergyAdvisorAgent:
         messages.append(HumanMessage(content=question))
         return messages
 
-    def invoke(self, question: str, context: str | None = None) -> dict[str, Any]:
+    def invoke(
+        self,
+        question: str,
+        context: str | None = None,
+        config: RunnableConfig | None = None,
+    ) -> dict[str, Any]:
         """Run the agent on a natural-language question.
 
         Returns:
             The LangGraph state dict. Final answer is in result["messages"][-1].content.
         """
-        return self.graph.invoke({"messages": self._build_messages(question, context)})
+        return self.graph.invoke(
+            {"messages": self._build_messages(question, context)},
+            config=config,
+        )
 
-    def stream(self, question: str, context: str | None = None) -> Iterator[str]:
+    def stream(
+        self,
+        question: str,
+        context: str | None = None,
+        config: RunnableConfig | None = None,
+    ) -> Iterator[str]:
         """Stream the final response token by token via LangGraph stream_mode='messages'.
 
         Yields text chunks from the assistant's final answer only — tool-calling
@@ -152,6 +166,7 @@ class EnergyAdvisorAgent:
         self.last_tools_used: list[str] = []
         for chunk, metadata in self.graph.stream(  # type: ignore[misc]
             {"messages": self._build_messages(question, context)},
+            config=config,
             stream_mode="messages",
         ):
             if (

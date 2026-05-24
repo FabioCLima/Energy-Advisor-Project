@@ -25,6 +25,9 @@ dependencies = [
     "scikit-learn>=1.4.0",
     "sqlalchemy>=2.0.23",
     "streamlit>=1.57.0",
+    "fastapi>=0.110.0",
+    "langserve[server]>=0.3.0",
+    "uvicorn>=0.30.0",
 ]
 
 [tool.ruff]

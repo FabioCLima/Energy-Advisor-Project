@@ -29,6 +29,9 @@ RUN pip install --no-cache-dir \
     "requests>=2.31.0" \
     "sqlalchemy>=2.0.23" \
     "streamlit>=1.57.0" \
+    "fastapi>=0.110.0" \
+    "langserve[server]>=0.3.0" \
+    "uvicorn>=0.30.0" \
     "rank-bm25>=0.2.2" \
     "langchain-classic>=1.0.0"
 
