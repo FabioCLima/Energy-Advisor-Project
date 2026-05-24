@@ -130,10 +130,17 @@ def render_top_consumers(db_path: str, days: int = 30) -> None:
         .head(3)
     )
     total = max(df["kwh"].sum(), 1e-9)
-    cols = st.columns(3)
+    cols = st.columns(3, gap="medium")
     for col, row in zip(cols, agg.itertuples(index=False), strict=False):
         pct = row.kwh / total * 100
-        col.metric(_friendly_device_name(row.device_name), f"{row.kwh:.0f} kWh", f"{pct:.0f}% of non-EV load")
+        label = _friendly_device_name(row.device_name)
+        compact_label = label.replace("Electric Shower", "Shower").replace("Office AC", "Office AC")
+        col.metric(
+            compact_label,
+            f"{row.kwh:.0f} kWh",
+            f"{pct:.0f}% of non-EV",
+            help=f"{label} consumed {row.kwh:.1f} kWh in this period.",
+        )
 
 
 _AVG_RATE_BRL = 0.656   # Enel SP mid-peak base rate used for solar savings estimate
@@ -280,8 +287,13 @@ def chart_consumption_by_device(db_path: str, days: int = 30) -> go.Figure:
     agg["pct"]           = (agg["kwh"] / total_kwh * 100).round(1)
     agg["label"]         = agg["pct"].apply(lambda v: "<1%" if 0 < v < 1 else f"{v:.0f}%")
 
+    max_kwh = max(float(agg["kwh"].max()), 1.0)
+
     fig = px.bar(
-        agg, x="kwh", y="display_name", orientation="h",
+        agg,
+        x="kwh",
+        y="display_name",
+        orientation="h",
         color="pattern_label",
         color_discrete_map={v: _PATTERN_COLOR[k] for k, v in _PATTERN_LABEL.items()},
         text="label",
@@ -293,15 +305,24 @@ def chart_consumption_by_device(db_path: str, days: int = 30) -> go.Figure:
             "cost_brl":      "Cost (R$)",
             "pct":           "% of total",
         },
-        title=f"Consumption by Device — last {days} days (EV shown separately)",
     )
-    fig.update_traces(textposition="outside")
+    fig.update_traces(textposition="outside", cliponaxis=False)
     fig.update_layout(
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        xaxis=dict(range=[0, max_kwh * 1.15], title="Consumption (kWh)", gridcolor="rgba(148,163,184,0.18)"),
+        yaxis=dict(title="", automargin=True),
+        legend=dict(
+            title="",
+            orientation="h",
+            yanchor="top",
+            y=-0.24,
+            xanchor="left",
+            x=0,
+        ),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
-        height=400,
-        margin=dict(l=10, r=60, t=60, b=20),
+        height=max(390, 110 + len(agg) * 31),
+        margin=dict(l=12, r=88, t=16, b=92),
+        uniformtext=dict(minsize=10, mode="show"),
     )
     return fig
 
@@ -408,14 +429,20 @@ def chart_solar_vs_consumption(db_path: str, days: int = 30) -> go.Figure:
     )
 
     fig.update_layout(
-        title=f"Solar vs Consumption — hourly average ({days} days)",
-        xaxis=dict(title="Hour of day", tickmode="linear", dtick=2),
-        yaxis=dict(title="kW (avg)"),   # S1 fix
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        xaxis=dict(title="Hour of day", tickmode="linear", dtick=2, gridcolor="rgba(148,163,184,0.16)"),
+        yaxis=dict(title="kW avg", gridcolor="rgba(148,163,184,0.18)", rangemode="tozero"),
+        legend=dict(
+            title="",
+            orientation="h",
+            yanchor="top",
+            y=-0.24,
+            xanchor="left",
+            x=0,
+        ),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
-        height=380,
-        margin=dict(l=10, r=20, t=60, b=40),
+        height=350,
+        margin=dict(l=18, r=28, t=18, b=92),
     )
     return fig
 
@@ -1054,27 +1081,27 @@ def render_solar_forecast_today(db_path: str) -> None:
     current_temp = hourly_wx.get(now_h, {}).get("temperature_c")
     total_actual = sum(actual_by_hour.values()) if actual_by_hour else None
 
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3, m4 = st.columns(4, gap="medium")
     m1.metric(
-        "☀️ Forecast Today", f"{total_forecast:.1f} kWh",
+        "Forecast", f"{total_forecast:.1f} kWh",
         help="Irradiance → kWh = W/m² ÷ 1000 × 4kWp × 0.85",
     )
     m2.metric(
-        "⏰ Peak Generation", f"{peak_h}h",
+        "Peak", f"{peak_h}h",
         help="Hour with highest predicted irradiance",
     )
     temp_label = f"{current_temp:.1f}°C · " if current_temp is not None else ""
     m3.metric(
-        "📡 Irradiance Now", f"{current_irr:.0f} W/m²",
+        "Irradiance", f"{current_irr:.0f} W/m²",
         help=f"{temp_label}{source_name}",
     )
     if total_actual is not None:
         m4.metric(
-            "🟢 Recorded So Far", f"{total_actual:.1f} kWh",
+            "Recorded", f"{total_actual:.1f} kWh",
             help="Accumulated kWh from DB today (synthetic in demo mode)",
         )
     else:
-        m4.metric("🟢 Recorded So Far", "—")
+        m4.metric("Recorded", "—")
 
     st.plotly_chart(fig, width="stretch")
 
