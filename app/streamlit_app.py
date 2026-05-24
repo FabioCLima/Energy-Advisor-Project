@@ -98,7 +98,7 @@ with st.sidebar:
         use_container_width=True,
     )
     st.divider()
-    st.caption("v0.2.0 · feat/portfolio-refactor")
+    st.caption("v0.3.0 · main")
 
 # ── Main tabs ─────────────────────────────────────────────────────────
 tab_dash, tab_chat = st.tabs(["📊 Dashboard", "💬 Ask the Advisor"])
