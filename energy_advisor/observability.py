@@ -15,7 +15,6 @@ from typing import Any
 
 from langchain_core.messages import AIMessage
 
-
 _MODEL_PRICING_USD_PER_1K_TOKENS: dict[str, tuple[float, float]] = {
     "gpt-4o-mini": (0.00015, 0.00060),
     "gpt-4o": (0.00500, 0.01500),
