@@ -42,10 +42,12 @@ certifi>=2024.8.30
 rank-bm25>=0.2.2
 langchain-classic>=1.0.0
 
-# API server (FastAPI + LangServe)
+# API server (FastAPI)
 fastapi>=0.110.0
-langserve[server]>=0.3.0
 uvicorn>=0.30.0
+
+# ML experiment tracking
+mlflow>=2.12.0
 
 # Dashboard
 streamlit>=1.45.0
