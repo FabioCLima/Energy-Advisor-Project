@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -16,7 +17,12 @@ except Exception:  # pragma: no cover
     HistGradientBoostingRegressor = None  # type: ignore
 
 from .database import DatabaseManager
-from .usage_forecasting import UsageForecastParams, _floor_to_hour, load_hourly_usage_series
+from .usage_forecasting import (
+    UsageForecastParams,
+    _floor_to_hour,
+    load_hourly_usage_series,
+    seasonal_naive_usage_forecast,
+)
 
 
 @dataclass(frozen=True)
@@ -41,7 +47,6 @@ def _build_feature_row(history: list[float], ts: datetime, lags: tuple[int, ...]
     h_sin, h_cos = _cyclical(ts.hour, 24)
     dow_sin, dow_cos = _cyclical(ts.weekday(), 7)
     feats.extend([h_sin, h_cos, dow_sin, dow_cos])
-
     return feats
 
 
@@ -51,18 +56,28 @@ def _feature_names(lags: tuple[int, ...]) -> list[str]:
     return names
 
 
-def train_usage_forecaster(
-    series: pd.Series,
-    config: SklearnForecasterConfig,
-) -> dict:
-    """Train a local autoregressive regressor on an hourly consumption series.
+def _regression_metrics(y_true: list[float], y_pred: list[float]) -> dict[str, float]:
+    if len(y_true) != len(y_pred):
+        raise ValueError("y_true and y_pred must have the same length")
+    if not y_true:
+        raise ValueError("metrics require at least one sample")
 
-    The model predicts 1-step ahead. Multi-step forecasts are generated recursively
-    by feeding predictions back into the lag history.
-    """
+    errors = [abs(a - b) for a, b in zip(y_true, y_pred, strict=True)]
+    squared = [(a - b) ** 2 for a, b in zip(y_true, y_pred, strict=True)]
+    mae = sum(errors) / len(errors)
+    rmse = math.sqrt(sum(squared) / len(squared))
+    return {"mae": round(mae, 6), "rmse": round(rmse, 6)}
+
+
+def _improvement_pct(baseline: float, candidate: float) -> float:
+    if baseline <= 0:
+        return 0.0
+    return round(((baseline - candidate) / baseline) * 100.0, 2)
+
+
+def train_usage_forecaster(series: pd.Series, config: SklearnForecasterConfig) -> dict:
     if HistGradientBoostingRegressor is None:
         raise RuntimeError("scikit-learn is not installed")
-
     if series.empty:
         raise ValueError("series is empty")
 
@@ -75,8 +90,6 @@ def train_usage_forecaster(
 
     X: list[list[float]] = []
     y: list[float] = []
-
-    # Point-in-time correctness: row at t uses only values < t.
     for i in range(max_lag, len(values)):
         ts = index[i].to_pydatetime()
         history = list(values[:i])
@@ -105,7 +118,6 @@ def train_usage_forecaster(
 def save_forecaster(artifact: dict, path: str) -> None:
     if dump is None:
         raise RuntimeError("joblib is not installed")
-
     os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
     dump(artifact, path)
 
@@ -113,7 +125,6 @@ def save_forecaster(artifact: dict, path: str) -> None:
 def load_forecaster(path: str) -> dict:
     if load is None:
         raise RuntimeError("joblib is not installed")
-
     return load(path)
 
 
@@ -153,6 +164,61 @@ def recursive_forecast(
     return points
 
 
+def evaluate_holdout_window(
+    series: pd.Series,
+    config: SklearnForecasterConfig,
+    *,
+    holdout_hours: int = 24 * 7,
+    lookback_weeks: int = 8,
+) -> dict:
+    if series.empty:
+        raise ValueError("series is empty")
+
+    max_lag = max(config.lags)
+    minimum_history = max_lag + holdout_hours + 24
+    if len(series) <= minimum_history:
+        raise ValueError(f"not enough history to evaluate: need > {minimum_history} hours")
+
+    train_series = series.iloc[:-holdout_hours]
+    holdout_series = series.iloc[-holdout_hours:]
+    holdout_start = holdout_series.index.min().to_pydatetime()
+    params = UsageForecastParams(horizon_hours=holdout_hours, lookback_weeks=lookback_weeks)
+
+    eval_artifact = train_usage_forecaster(train_series, config=config)
+    ml_points = recursive_forecast(
+        train_series,
+        artifact=eval_artifact,
+        params=params,
+        reference_time=holdout_start,
+    )
+    baseline_points = seasonal_naive_usage_forecast(
+        train_series,
+        params=params,
+        reference_time=holdout_start,
+    )
+
+    y_true = [round(float(value), 4) for value in holdout_series.values.astype(float).tolist()]
+    y_pred_ml = [float(point["predicted_kwh"]) for point in ml_points]
+    y_pred_baseline = [float(point["predicted_kwh"]) for point in baseline_points]
+
+    ml_metrics = _regression_metrics(y_true, y_pred_ml)
+    baseline_metrics = _regression_metrics(y_true, y_pred_baseline)
+
+    return {
+        "holdout_hours": holdout_hours,
+        "train_samples": int(len(train_series)),
+        "test_samples": int(len(holdout_series)),
+        "baseline_mae": baseline_metrics["mae"],
+        "baseline_rmse": baseline_metrics["rmse"],
+        "model_mae": ml_metrics["mae"],
+        "model_rmse": ml_metrics["rmse"],
+        "mae_improvement_pct": _improvement_pct(baseline_metrics["mae"], ml_metrics["mae"]),
+        "rmse_improvement_pct": _improvement_pct(baseline_metrics["rmse"], ml_metrics["rmse"]),
+        "evaluation_window_start": holdout_series.index.min().isoformat(timespec="minutes"),
+        "evaluation_window_end": holdout_series.index.max().isoformat(timespec="minutes"),
+    }
+
+
 def forecast_energy_usage_ml(
     db_path: str,
     model_path: str,
@@ -173,7 +239,7 @@ def forecast_energy_usage_ml(
         model_path,
     )
 
-    return {
+    payload = {
         "device_type": device_type,
         "method": "sklearn_hgb",
         "horizon_hours": params.horizon_hours,
@@ -181,3 +247,6 @@ def forecast_energy_usage_ml(
         "total_predicted_kwh": round(sum(p["predicted_kwh"] for p in points), 4),
         "model_path": model_path,
     }
+    if artifact.get("validation") is not None:
+        payload["validation"] = artifact["validation"]
+    return payload

@@ -1,12 +1,4 @@
-"""Bootstrap step: Train local ML models for usage forecasting.
-
-This step is optional. It produces a scikit-learn model artifact under Settings.models_dir.
-
-Usage:
-    python -m energy_advisor.bootstrap.ml_train
-    python -m energy_advisor.bootstrap.ml_train --device-type ev
-    python -m energy_advisor.bootstrap.ml_train --force
-"""
+"""Bootstrap step: train local ML models and persist validation metrics."""
 
 from __future__ import annotations
 
@@ -21,9 +13,12 @@ from ..services.database import DatabaseManager, EnergyUsage
 from ..services.usage_forecasting import load_hourly_usage_series
 from ..services.usage_forecasting_ml import (
     SklearnForecasterConfig,
+    evaluate_holdout_window,
     save_forecaster,
     train_usage_forecaster,
 )
+
+_HOLDOUT_HOURS = 24 * 7
 
 
 def _list_device_types(db: DatabaseManager) -> list[str]:
@@ -45,7 +40,6 @@ def train_models(
     device_types: list[str] | None = None,
     force: bool = False,
 ) -> list[str]:
-    """Train forecast models and return list of paths written."""
     db = DatabaseManager(db_path=settings.db_path)
     db.create_tables()
 
@@ -66,10 +60,27 @@ def train_models(
             logger.warning("No data found for device_type={}, skipping.", device_type)
             continue
 
-        artifact = train_usage_forecaster(series, config=SklearnForecasterConfig())
+        config = SklearnForecasterConfig()
+        validation: dict | None = None
+        try:
+            validation = evaluate_holdout_window(series, config, holdout_hours=_HOLDOUT_HOURS)
+            logger.info(
+                "Validation | device_type={} rmse(model={:.4f}, baseline={:.4f}) mae(model={:.4f}, baseline={:.4f})",
+                device_type or "all",
+                validation["model_rmse"],
+                validation["baseline_rmse"],
+                validation["model_mae"],
+                validation["baseline_mae"],
+            )
+        except ValueError as exc:
+            logger.warning("Skipping hold-out validation for device_type={}: {}", device_type, exc)
+
+        artifact = train_usage_forecaster(series, config=config)
         artifact["device_type"] = device_type
+        artifact["trained_start_time"] = series.index.min().to_pydatetime().isoformat(timespec="minutes")
         artifact["trained_end_time"] = series.index.max().to_pydatetime().isoformat(timespec="minutes")
         artifact["trained_samples"] = int(len(series))
+        artifact["validation"] = validation
 
         save_forecaster(artifact, model_path)
         written.append(model_path)

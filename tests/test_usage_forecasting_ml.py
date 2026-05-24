@@ -73,3 +73,41 @@ def test_predict_energy_usage_uses_ml_when_model_exists(tmp_path: Path, tmp_db_p
     result = predict_energy_usage.invoke({"device_type": "hvac", "horizon_hours": 24})
     assert result.get("method") == "sklearn_hgb"
     assert len(result.get("points", [])) == 24
+
+
+
+def test_holdout_evaluation_persists_metrics(db: DatabaseManager) -> None:
+    from energy_advisor.services.usage_forecasting_ml import (
+        SklearnForecasterConfig,
+        evaluate_holdout_window,
+        train_usage_forecaster,
+    )
+
+    start = datetime(2026, 1, 1, 0, 0, 0)
+    for hour in range(24 * 35):
+        ts = start + timedelta(hours=hour)
+        base = 0.2
+        if ts.hour in {18, 19, 20}:
+            base = 0.45
+        if ts.weekday() >= 5:
+            base += 0.05
+        db.add_usage_record(
+            timestamp=ts,
+            consumption_kwh=base,
+            device_type="appliance",
+            device_name="appliance",
+        )
+
+    series = load_hourly_usage_series(db, device_type="appliance")
+    validation = evaluate_holdout_window(
+        series,
+        SklearnForecasterConfig(max_iter=40),
+        holdout_hours=24 * 7,
+    )
+    artifact = train_usage_forecaster(series, config=SklearnForecasterConfig(max_iter=40))
+    artifact["validation"] = validation
+
+    assert validation["test_samples"] == 24 * 7
+    assert "model_rmse" in validation
+    assert "baseline_rmse" in validation
+    assert artifact["validation"]["holdout_hours"] == 24 * 7
