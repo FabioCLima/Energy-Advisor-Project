@@ -119,9 +119,30 @@ ALL_SCENARIOS: list[Scenario] = [
         ),
         tags=["solar", "savings", "annual"],
     ),
+    Scenario(
+        id="optimize_30d_savings",
+        question="Quais são minhas maiores oportunidades de economia nos próximos 30 dias? Quero saber quais dispositivos devo mudar e quanto vou economizar.",
+        required_tools=["optimize_energy_schedule"],
+        judge_rubric=(
+            "A resposta deve listar ao menos uma recomendação ranqueada com dispositivo, "
+            "ação concreta, e economia estimada em R$ para 30 dias. "
+            "Deve indicar se a previsão veio de ML (sklearn_hgb) ou baseline."
+        ),
+        tags=["optimization", "ml", "savings"],
+    ),
+    Scenario(
+        id="predict_usage_tomorrow",
+        question="Qual o consumo esperado de energia amanhã por categoria de dispositivo?",
+        required_tools=["predict_energy_usage"],
+        judge_rubric=(
+            "A resposta deve mencionar o consumo previsto (em kWh) por período do dia ou por dispositivo, "
+            "indicar o método de previsão (ML ou baseline) e recomendar alguma ação baseada no forecast."
+        ),
+        tags=["forecast", "ml"],
+    ),
 ]
 
 QUICK_SCENARIOS: list[Scenario] = [
     s for s in ALL_SCENARIOS
-    if s.id in {"ev_charging_timing", "home_office_cost_30d", "current_tariff_period"}
+    if s.id in {"ev_charging_timing", "home_office_cost_30d", "current_tariff_period", "predict_usage_tomorrow"}
 ]
