@@ -57,7 +57,7 @@ def _build_config(req: AdvisorRequest) -> dict[str, Any]:
 
 
 settings = Settings()
-ensure_demo_assets(settings=settings, ensure_vectorstore_index=False)
+ensure_demo_assets(settings=settings, ensure_vectorstore_index=settings.bootstrap_vectorstore)
 
 app = FastAPI(
     title="EcoHome Energy Advisor API",
