@@ -42,6 +42,96 @@ HOME_OFFICE_DEVICES = frozenset({
     "AC Escritório Inverter 12k BTU",
 })
 
+_DISPLAY_NAME = {
+    "AC Escritório Inverter 12k BTU": "Office AC",
+    "Chuveiro Elétrico 5500W": "Electric Shower",
+    "Geladeira Consul 400L": "Fridge",
+    "Iluminação Quarto (LED 3×7W)": "Bedroom Lights",
+    "Iluminação Sala (LED 6×9W)": "Living Room Lights",
+    'Monitor 27" Dell UltraSharp': "Monitor",
+    "Máquina de Lavar 11kg": "Washing Machine",
+    "PC Home-Office (Ryzen 7)": "Workstation",
+    "Roteador + Modem": "Router + Modem",
+    'Smart TV 55" Samsung': "Smart TV",
+    "Tesla Model 3 Long Range": "Tesla Model 3",
+}
+
+
+def _friendly_device_name(name: str) -> str:
+    return _DISPLAY_NAME.get(name, name)
+
+
+def _delta_pct(current: float, previous: float) -> str | None:
+    if previous <= 0:
+        return None
+    pct = ((current - previous) / previous) * 100
+    sign = "-" if pct < 0 else ""
+    return f"{sign}{abs(pct):.0f}% vs prev"
+
+
+def _split_current_previous(df: pd.DataFrame, days: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if df.empty:
+        return df, df
+    cutoff = _day_start(days)
+    current = df[df["timestamp"] >= cutoff]
+    previous = df[(df["timestamp"] < cutoff) & (df["timestamp"] >= _day_start(days * 2))]
+    return current, previous
+
+
+def _format_freshness(dt: pd.Timestamp | datetime | None) -> str:
+    if dt is None or pd.isna(dt):
+        return "no recent update"
+    if isinstance(dt, pd.Timestamp):
+        dt = dt.to_pydatetime()
+    return dt.strftime("%d %b %Y · %H:%M")
+
+
+def build_dashboard_export_csv(db_path: str, days: int = 30) -> bytes:
+    """Return a compact CSV export with KPI and per-device summaries."""
+    df_usage = _load_usage(db_path, days)
+    df_solar = _load_solar(db_path, days)
+    usage_rows = []
+    if not df_usage.empty:
+        usage_rows = (
+            df_usage.groupby("device_name", as_index=False)
+            .agg(consumption_kwh=("kwh", "sum"), cost_brl=("cost_brl", "sum"))
+            .assign(section="device_summary")
+        )
+        usage_rows["device_name"] = usage_rows["device_name"].map(_friendly_device_name)
+    total_kwh = df_usage["kwh"].sum() if not df_usage.empty else 0.0
+    total_brl = df_usage["cost_brl"].sum() if not df_usage.empty else 0.0
+    solar_kwh = df_solar["kwh"].sum() if not df_solar.empty else 0.0
+    summary = pd.DataFrame([
+        {"section": "kpi_summary", "metric": "analysis_days", "value": days},
+        {"section": "kpi_summary", "metric": "total_consumption_kwh", "value": round(total_kwh, 3)},
+        {"section": "kpi_summary", "metric": "gross_cost_brl", "value": round(total_brl, 2)},
+        {"section": "kpi_summary", "metric": "solar_generation_kwh", "value": round(solar_kwh, 3)},
+    ])
+    device_df = pd.DataFrame(usage_rows) if len(usage_rows) else pd.DataFrame(columns=["section", "device_name", "consumption_kwh", "cost_brl"])
+    out = pd.concat([summary, device_df], ignore_index=True, sort=False)
+    return out.to_csv(index=False).encode("utf-8")
+
+
+def render_top_consumers(db_path: str, days: int = 30) -> None:
+    df = _load_usage(db_path, days)
+    if df.empty:
+        return
+    df = df[~df["is_ev"]]
+    if df.empty:
+        return
+    agg = (
+        df.groupby("device_name", as_index=False)["kwh"]
+        .sum()
+        .sort_values("kwh", ascending=False)
+        .head(3)
+    )
+    total = max(df["kwh"].sum(), 1e-9)
+    cols = st.columns(3)
+    for col, row in zip(cols, agg.itertuples(index=False), strict=False):
+        pct = row.kwh / total * 100
+        col.metric(_friendly_device_name(row.device_name), f"{row.kwh:.0f} kWh", f"{pct:.0f}% of non-EV load")
+
+
 _AVG_RATE_BRL = 0.656   # Enel SP mid-peak base rate used for solar savings estimate
 
 # João's solar panel — used in forecast conversion
@@ -107,38 +197,58 @@ def _load_solar(db_path: str, days: int) -> pd.DataFrame:
 # ── Metrics row ───────────────────────────────────────────────────────
 
 def render_metrics(db_path: str, days: int = 30) -> None:
-    """5-card KPI row. Home office cost uses HOME_OFFICE_DEVICES (fixes B1)."""
-    df_usage = _load_usage(db_path, days)
-    df_solar = _load_solar(db_path, days)
+    """Themed KPI groups with previous-period deltas and freshness metadata."""
+    df_usage_all = _load_usage(db_path, max(days * 2, days))
+    df_solar_all = _load_solar(db_path, max(days * 2, days))
+    df_usage, df_usage_prev = _split_current_previous(df_usage_all, days)
+    df_solar, df_solar_prev = _split_current_previous(df_solar_all, days)
 
-    total_kwh  = df_usage["kwh"].sum()      if not df_usage.empty else 0.0
-    total_brl  = df_usage["cost_brl"].sum() if not df_usage.empty else 0.0
-    solar_kwh  = df_solar["kwh"].sum()      if not df_solar.empty else 0.0
+    total_kwh = df_usage["kwh"].sum() if not df_usage.empty else 0.0
+    total_brl = df_usage["cost_brl"].sum() if not df_usage.empty else 0.0
+    solar_kwh = df_solar["kwh"].sum() if not df_solar.empty else 0.0
+    office_brl = df_usage[df_usage["is_office"]]["cost_brl"].sum() if not df_usage.empty else 0.0
+    ev_kwh = df_usage[df_usage["is_ev"]]["kwh"].sum() if not df_usage.empty else 0.0
 
-    # B1 fix: filter by device name, not by location
-    office_brl = (
-        df_usage[df_usage["is_office"]]["cost_brl"].sum()
-        if not df_usage.empty else 0.0
+    prev_total_kwh = df_usage_prev["kwh"].sum() if not df_usage_prev.empty else 0.0
+    prev_total_brl = df_usage_prev["cost_brl"].sum() if not df_usage_prev.empty else 0.0
+    prev_solar_kwh = df_solar_prev["kwh"].sum() if not df_solar_prev.empty else 0.0
+    prev_office_brl = df_usage_prev[df_usage_prev["is_office"]]["cost_brl"].sum() if not df_usage_prev.empty else 0.0
+    prev_ev_kwh = df_usage_prev[df_usage_prev["is_ev"]]["kwh"].sum() if not df_usage_prev.empty else 0.0
+
+    self_suff = (solar_kwh / total_kwh * 100) if total_kwh > 0 else 0.0
+    prev_self_suff = (prev_solar_kwh / prev_total_kwh * 100) if prev_total_kwh > 0 else 0.0
+    solar_savings = solar_kwh * _AVG_RATE_BRL
+    prev_solar_savings = prev_solar_kwh * _AVG_RATE_BRL
+    net_cost = max(0.0, total_brl - solar_savings)
+    prev_net_cost = max(0.0, prev_total_brl - prev_solar_savings)
+    ev_share = (ev_kwh / total_kwh * 100) if total_kwh > 0 else 0.0
+    prev_ev_share = (prev_ev_kwh / prev_total_kwh * 100) if prev_total_kwh > 0 else 0.0
+
+    latest_usage = df_usage["timestamp"].max() if not df_usage.empty else None
+    latest_solar = df_solar["timestamp"].max() if not df_solar.empty else None
+    freshest = max([ts for ts in [latest_usage, latest_solar] if ts is not None], default=None)
+
+    st.caption(
+        f"Analysis window: {days} days · compare against previous {days} days · "
+        f"latest data: {_format_freshness(freshest)}"
     )
 
-    # K1: solar self-sufficiency
-    self_suff = (solar_kwh / total_kwh * 100) if total_kwh > 0 else 0.0
+    st.markdown("**Financial**")
+    row_fin = st.columns(3)
+    row_fin[0].metric("💸 Gross Cost", f"R$ {total_brl:,.2f}", _delta_pct(total_brl, prev_total_brl), help="Before solar offset")
+    row_fin[1].metric("☀️ Solar Savings", f"R$ {solar_savings:,.2f}", _delta_pct(solar_savings, prev_solar_savings), help=f"Solar × R$ {_AVG_RATE_BRL}/kWh")
+    row_fin[2].metric("🔌 Net Grid Cost", f"R$ {net_cost:,.2f}", _delta_pct(net_cost, prev_net_cost), help="Gross cost − solar savings")
 
-    # K2/K3: solar savings and net grid cost
-    solar_savings = solar_kwh * _AVG_RATE_BRL
-    net_cost = max(0.0, total_brl - solar_savings)
+    st.markdown("**Energy**")
+    row_energy = st.columns(3)
+    row_energy[0].metric("⚡ Consumption", f"{total_kwh:,.0f} kWh", _delta_pct(total_kwh, prev_total_kwh), help=f"Last {days} days")
+    row_energy[1].metric("☀️ Solar Generation", f"{solar_kwh:,.0f} kWh", _delta_pct(solar_kwh, prev_solar_kwh), help=f"4kWp panel — last {days} days")
+    row_energy[2].metric("🔋 Self-sufficiency", f"{self_suff:.0f}%", _delta_pct(self_suff, prev_self_suff), help="Solar ÷ total consumption")
 
-    row1 = st.columns(5)
-    row1[0].metric("⚡ Consumption",        f"{total_kwh:,.0f} kWh",      help=f"Last {days} days")
-    row1[1].metric("💸 Gross Cost",         f"R$ {total_brl:,.2f}",       help="Before solar offset")
-    row1[2].metric("☀️ Solar Generation",   f"{solar_kwh:,.0f} kWh",      help=f"4kWp panel — {days} days")
-    row1[3].metric("🔋 Self-sufficiency",   f"{self_suff:.0f}%",          help="Solar ÷ Total consumption")
-    row1[4].metric("🖥️ Home Office Cost",   f"R$ {office_brl:,.2f}",      help="PC + Monitor + AC office · from start of day, 30 days ago")
-
-    row2 = st.columns(3)
-    row2[0].metric("☀️ Solar Savings",      f"R$ {solar_savings:,.2f}",   help=f"Solar × R$ {_AVG_RATE_BRL}/kWh")
-    row2[1].metric("🔌 Net Grid Cost",      f"R$ {net_cost:,.2f}",        help="Gross cost − solar savings")
-    row2[2].metric("📅 Period",             f"{days} days",               help="Adjust with the sidebar slider")
+    st.markdown("**Efficiency**")
+    row_eff = st.columns(2)
+    row_eff[0].metric("🖥️ Home Office Cost", f"R$ {office_brl:,.2f}", _delta_pct(office_brl, prev_office_brl), help="PC + Monitor + Office AC")
+    row_eff[1].metric("🚗 EV Share", f"{ev_share:.0f}%", _delta_pct(ev_share, prev_ev_share), help="EV consumption ÷ total household consumption")
 
 
 # ── Chart 1: Consumption by device (EV excluded — see EV section) ─────
@@ -162,18 +272,19 @@ def chart_consumption_by_device(db_path: str, days: int = 30) -> go.Figure:
         .sort_values("kwh", ascending=True)
     )
     agg["pattern_label"] = agg["usage_pattern"].map(_PATTERN_LABEL)
+    agg["display_name"]  = agg["device_name"].map(_friendly_device_name)
     agg["pct"]           = (agg["kwh"] / total_kwh * 100).round(1)
-    agg["label"]         = agg.apply(lambda r: f"{r['pct']:.0f}%", axis=1)
+    agg["label"]         = agg["pct"].apply(lambda v: "<1%" if 0 < v < 1 else f"{v:.0f}%")
 
     fig = px.bar(
-        agg, x="kwh", y="device_name", orientation="h",
+        agg, x="kwh", y="display_name", orientation="h",
         color="pattern_label",
         color_discrete_map={v: _PATTERN_COLOR[k] for k, v in _PATTERN_LABEL.items()},
         text="label",
         hover_data={"cost_brl": ":.2f", "kwh": ":.1f", "pct": ":.1f"},
         labels={
             "kwh":           "Consumption (kWh)",
-            "device_name":   "",
+            "display_name":  "",
             "pattern_label": "Category",
             "cost_brl":      "Cost (R$)",
             "pct":           "% of total",
@@ -218,7 +329,7 @@ def render_ev_summary(db_path: str, days: int = 30) -> None:
     c3.metric("📅 Charging Days",         f"{sessions}")
     c4.metric("📊 % of Home Consumption", f"{pct_total:.0f}%")
     st.caption(
-        f"Average R$ {avg_cost:.2f} per charging day · "
+        f"Average cost per charging day: R$ {avg_cost:.2f} · "
         "Best charging window: **0h–5h (off-peak, R$ 0.538/kWh)**"
     )
 
@@ -263,17 +374,24 @@ def chart_solar_vs_consumption(db_path: str, days: int = 30) -> go.Figure:
         fillcolor="rgba(243,156,18,0.20)",
     ))
 
-    # S2: surplus area — where solar > consumption
     surplus_y = [max(0.0, s - u) for s, u in zip(solar_vals, usage_vals, strict=True)]
+    import_y = [max(0.0, u - s) for s, u in zip(solar_vals, usage_vals, strict=True)]
     surplus_base = [min(s, u) for s, u in zip(solar_vals, usage_vals, strict=True)]
     fig.add_trace(go.Scatter(
         x=hours + hours[::-1],
         y=[b + s for b, s in zip(surplus_base, surplus_y, strict=True)] + surplus_base[::-1],
         fill="toself",
-        fillcolor="rgba(39,174,96,0.25)",
+        fillcolor="rgba(46, 204, 113, 0.28)",
         line=dict(color="rgba(0,0,0,0)"),
         name="Solar Surplus → Grid",
         hoverinfo="skip",
+    ))
+    fig.add_trace(go.Bar(
+        x=hours,
+        y=import_y,
+        name="Grid Import",
+        marker_color="rgba(52, 152, 219, 0.35)",
+        opacity=0.75,
     ))
 
     # Current hour marker
@@ -324,17 +442,20 @@ def chart_tou_rates(date: str | None = None) -> go.Figure:
         else:
             texts.append("")
 
+    current_colors = [
+        "#1E8449" if p == "off_peak" else
+        "#D68910" if p == "mid_peak" else
+        "#C0392B"
+        for p in periods
+    ]
     fig = go.Figure(go.Bar(
         x=hours,
         y=rate_values,
         text=texts,
         textposition="outside",
-        marker_color=[
-            "#27AE60" if p == "off_peak" else
-            "#F39C12" if p == "mid_peak" else
-            "#E74C3C"
-            for p in periods
-        ],
+        marker_color=current_colors,
+        marker_line_color=["#FFFFFF" if h == datetime.now().hour else "rgba(0,0,0,0)" for h in hours],
+        marker_line_width=[2.5 if h == datetime.now().hour else 0 for h in hours],
         hovertext=[
             f"{_PERIOD_LABEL.get(p, p)}<br>R$ {t:.4f}/kWh"
             for p, t in zip(periods, rate_values, strict=True)
@@ -342,18 +463,16 @@ def chart_tou_rates(date: str | None = None) -> go.Figure:
         hoverinfo="text",
     ))
 
-    # T2: current hour marker
     now_h = datetime.now().hour
-    fig.add_vline(
-        x=now_h, line_width=2, line_dash="dash", line_color="#2C3E50",
-        annotation_text=f"Now ({now_h}h)",
-        annotation_position="top right",
-        annotation_font_size=11,
+    fig.add_annotation(
+        x=now_h, y=rate_values[now_h], text=f"Now ({now_h}h)", showarrow=True,
+        arrowhead=2, arrowsize=1, arrowwidth=1.5, arrowcolor="#FFFFFF",
+        ax=0, ay=-35, font=dict(size=11, color="#FFFFFF"), bgcolor="#2C3E50"
     )
 
     adicional_txt = f" (+R$ {adicional:.4f}/kWh surcharge)" if adicional > 0 else ""
     fig.update_layout(
-        title=f"Enel SP Energy Rates — Bandeira {bandeira}{adicional_txt}",
+        title=f"Enel SP Energy Rates — Flag {bandeira}{adicional_txt}",
         xaxis=dict(title="Hour", tickmode="linear", dtick=1),
         yaxis=dict(title="R$/kWh", range=[0, max(rate_values) * 1.30]),
         plot_bgcolor="rgba(0,0,0,0)",
@@ -382,6 +501,7 @@ def chart_home_office_report(db_path: str, days: int = 30) -> tuple[go.Figure, d
         df_office.groupby("device_name", as_index=False)
                  .agg(kwh=("kwh", "sum"), cost_brl=("cost_brl", "sum"))
     )
+    agg["display_name"] = agg["device_name"].map(_friendly_device_name)
 
     total_brl   = agg["cost_brl"].sum()
     monthly_brl = total_brl / (days / 30)
@@ -392,10 +512,10 @@ def chart_home_office_report(db_path: str, days: int = 30) -> tuple[go.Figure, d
     max_val = agg["cost_brl"].max() if not agg.empty else 1.0
 
     fig = px.bar(
-        agg, x="device_name", y="cost_brl",
+        agg, x="display_name", y="cost_brl",
         color="device_name",
         color_discrete_sequence=["#3498DB", "#9B59B6", "#E67E22"],
-        labels={"device_name": "", "cost_brl": "Cost (R$)"},
+        labels={"display_name": "", "cost_brl": "Cost (R$)"},
         title=f"Home Office Cost — last {days} days",
         text="label",
     )
@@ -685,8 +805,9 @@ def render_ml_forecast_section(db_path: str) -> None:
     metrics = st.columns(4)
     metrics[0].metric("Total (next 24h)", f"{total_24h:.2f} kWh")
     metrics[1].metric("Peak Hour", f"{peak_h}h ({peak_kwh:.2f} kWh)")
-    metrics[2].metric("EV Predicted", f"{cat_totals.get('EV (Tesla)', 0.0):.2f} kWh")
-    metrics[3].metric("HVAC Predicted", f"{cat_totals.get('HVAC', 0.0):.2f} kWh")
+    metrics[2].metric("Forecast Method", method_label.replace("🤖 ", "").replace("📊 ", ""))
+    validation_label = "Available" if validation else "Missing"
+    metrics[3].metric("Hold-out Metrics", validation_label)
     st.plotly_chart(fig, width="stretch")
 
     if validation:
@@ -702,14 +823,16 @@ def render_ml_forecast_section(db_path: str) -> None:
         else:
             st.caption("Validation is mixed: the seasonal baseline still wins on part of the hold-out. Keep both visible.")
     else:
-        st.caption("No hold-out metrics found in the model artifact yet.")
+        st.caption("Model artifact has no saved hold-out metrics yet. Re-run local training to publish validation.")
 
     with st.expander("Category breakdown", expanded=False):
+        st.caption("Independent device-family forecasts. They are useful for ranking likely load drivers, but they do not need to sum exactly to the household total model.")
         cols = st.columns(len(_FORECAST_CATEGORIES))
+        category_total = sum(cat_totals.values())
         for i, (_, label, _) in enumerate(_FORECAST_CATEGORIES):
             kwh = cat_totals.get(label, 0.0)
-            pct = (kwh / total_24h * 100) if total_24h > 0 else 0.0
-            cols[i].metric(label, f"{kwh:.2f} kWh", f"{pct:.0f}% of total")
+            pct = (kwh / category_total * 100) if category_total > 0 else 0.0
+            cols[i].metric(label, f"{kwh:.2f} kWh", f"{pct:.0f}% of category view")
 
 
 # ── Layer 2: Optimization Recommendations ────────────────────────────

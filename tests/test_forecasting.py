@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from energy_advisor.services.forecasting import _WMO_CONDITION, generate_hourly_forecast
+from energy_advisor.services.forecasting import _WMO_CONDITION, _sanitize_temperature_c, generate_hourly_forecast
 
 # Minimal valid Open-Meteo API response for mocking
 _MOCK_API_RESPONSE = {
@@ -125,3 +125,9 @@ def test_fallback_condition_in_allowed_values():
         result = generate_hourly_forecast(location="Miami", days=1)
     for h in result["hourly"]:
         assert h["condition"] in valid
+
+
+def test_sanitize_temperature_hides_implausible_values():
+    assert _sanitize_temperature_c(-15.0) is None
+    assert _sanitize_temperature_c(52.0) is None
+    assert _sanitize_temperature_c(26.4) == 26.4
