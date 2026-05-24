@@ -21,8 +21,9 @@ from langgraph.prebuilt import ToolNode
 from loguru import logger
 
 from .config import Settings
+from .guardrails import ensure_safe_model_output, ensure_safe_user_input
 from .logging import configure_logging
-from .observability import TraceRecorder, build_agent_trace, new_request_id
+from .observability import TraceRecorder, build_agent_trace, extract_final_answer, new_request_id
 from .prompts import SYSTEM_INSTRUCTIONS
 from .tools import TOOL_KIT
 
@@ -146,6 +147,7 @@ class EnergyAdvisorAgent:
         request_id, metadata = self._observability_context(config)
         t0 = time.perf_counter()
         try:
+            ensure_safe_user_input(question)
             result = self.graph.invoke(
                 {"messages": self._build_messages(question, context)},
                 config=config,
@@ -163,6 +165,18 @@ class EnergyAdvisorAgent:
             raise
 
         elapsed = time.perf_counter() - t0
+        try:
+            ensure_safe_model_output(extract_final_answer(result))
+        except Exception as exc:
+            self._record_trace(
+                question=question,
+                result=result,
+                latency_s=elapsed,
+                request_id=request_id,
+                metadata=metadata,
+                error=str(exc),
+            )
+            raise
         self._record_trace(
             question=question,
             result=result,
@@ -191,6 +205,7 @@ class EnergyAdvisorAgent:
         Yields:
             str: Individual text chunks of the final response.
         """
+        ensure_safe_user_input(question)
         self.last_tools_used: list[str] = []
         for chunk, metadata in self.graph.stream(  # type: ignore[misc]
             {"messages": self._build_messages(question, context)},
@@ -207,7 +222,6 @@ class EnergyAdvisorAgent:
             elif isinstance(chunk, ToolMessage) and chunk.name:
                 if chunk.name not in self.last_tools_used:
                     self.last_tools_used.append(chunk.name)
-
 
     def _observability_context(self, config: RunnableConfig | None) -> tuple[str, dict[str, Any]]:
         metadata: dict[str, Any] = {}
