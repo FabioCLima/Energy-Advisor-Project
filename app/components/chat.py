@@ -7,10 +7,10 @@ from __future__ import annotations
 import streamlit as st
 
 _SUGGESTED_QUESTIONS = [
-    "How much did my home office cost in the last 30 days?",
-    "When should I charge the Tesla to save the most?",
-    "Which device consumes the most energy at home?",
-    "What is the best time to run the washing machine today?",
+    "Quanto gastei com home office nos últimos 30 dias?",
+    "Qual o melhor horário para carregar o Tesla esta noite?",
+    "Qual dispositivo consome mais energia em casa?",
+    "Quais são minhas maiores oportunidades de economia nos próximos 30 dias?",
 ]
 
 
