@@ -102,9 +102,16 @@ Then run either the API or evaluation harness. In LangSmith, inspect:
 
 The advantage is practical: local JSONL traces prove the concept and work anywhere; LangSmith gives a visual trace UI for debugging, demos and team review.
 
+### Agent Observability
+
+The LangGraph agent is traced in LangSmith, making tool usage, latency, error rate and run types inspectable during evaluation and debugging.
+
+This screenshot shows tool-level observability for the EcoHome agent: which tools were called, how often, their median latency, and whether any tool errors occurred.
+
+![LangSmith tool observability](assets/langsmith_tools_observability.png)
+
 For implementation rationale, see [`docs/mlops_implementation_notes.md`](docs/mlops_implementation_notes.md).
 
-A real LangSmith screenshot can be added after running the agent with tracing enabled. For a public repository, use a sanitized trace view that shows the run tree, tool calls, latency and token/cost metadata without exposing API keys, private prompts or user data.
 
 ---
 
