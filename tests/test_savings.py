@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+
 from energy_advisor.services.recommendations import compute_savings
 
 

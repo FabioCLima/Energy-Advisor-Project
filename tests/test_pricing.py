@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
+
 from energy_advisor.services.pricing import generate_time_of_use_prices
 
 

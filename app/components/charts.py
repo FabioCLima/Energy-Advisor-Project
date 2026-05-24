@@ -7,13 +7,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pandas as pd
-import plotly.graph_objects as go
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from energy_advisor.services.database import DatabaseManager
-from energy_advisor.services.pricing import generate_time_of_use_prices
 from energy_advisor.services.forecasting import generate_hourly_forecast
+from energy_advisor.services.pricing import generate_time_of_use_prices
 
 # ── Constants ─────────────────────────────────────────────────────────
 
@@ -258,11 +258,11 @@ def chart_solar_vs_consumption(db_path: str, days: int = 30) -> go.Figure:
     ))
 
     # S2: surplus area — where solar > consumption
-    surplus_y = [max(0.0, s - u) for s, u in zip(solar_vals, usage_vals)]
-    surplus_base = [min(s, u) for s, u in zip(solar_vals, usage_vals)]
+    surplus_y = [max(0.0, s - u) for s, u in zip(solar_vals, usage_vals, strict=True)]
+    surplus_base = [min(s, u) for s, u in zip(solar_vals, usage_vals, strict=True)]
     fig.add_trace(go.Scatter(
         x=hours + hours[::-1],
-        y=[b + s for b, s in zip(surplus_base, surplus_y)] + surplus_base[::-1],
+        y=[b + s for b, s in zip(surplus_base, surplus_y, strict=True)] + surplus_base[::-1],
         fill="toself",
         fillcolor="rgba(39,174,96,0.25)",
         line=dict(color="rgba(0,0,0,0)"),
@@ -311,7 +311,7 @@ def chart_tou_rates(date: str | None = None) -> go.Figure:
 
     # T1: label only on first bar of each period group
     texts, seen = [], set()
-    for p, t in zip(periods, tariffs):
+    for p, t in zip(periods, tariffs, strict=True):
         if p not in seen:
             texts.append(f"R${t:.3f}")
             seen.add(p)
@@ -331,7 +331,7 @@ def chart_tou_rates(date: str | None = None) -> go.Figure:
         ],
         hovertext=[
             f"{_PERIOD_LABEL.get(p, p)}<br>R$ {t:.4f}/kWh"
-            for p, t in zip(periods, tariffs)
+            for p, t in zip(periods, tariffs, strict=True)
         ],
         hoverinfo="text",
     ))
@@ -437,7 +437,6 @@ def render_daily_insight(db_path: str) -> None:
     current_wx   = hourly_wx.get(now_h, {})
     irradiance   = current_wx.get("solar_irradiance", 0.0)
     temperature  = current_wx.get("temperature_c")
-    condition    = current_wx.get("condition", "")
     data_source  = weather.get("data_source", "synthetic")
 
     # Irradiance thresholds for a 4kWp panel (roughly: >500 = good generation)
@@ -559,7 +558,6 @@ def render_bill_analysis(db_path: str, days: int = 30) -> None:
     office     = by_ctrl.get("Home Office", 0.0)
     shiftable  = by_ctrl.get("Flexible (shiftable)", 0.0)
     ev         = by_ctrl.get("EV Charging", 0.0)
-    total      = fixed + office + shiftable + ev
 
     # Savings potential: shiftable devices shifted to off-peak
     shiftable_kwh = df[df["controllability"] == "Flexible (shiftable)"]["kwh"].sum()

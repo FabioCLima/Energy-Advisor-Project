@@ -4,12 +4,13 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+from langchain_core.embeddings.fake import FakeEmbeddings
+
 from energy_advisor.services.retrieval import (
     _load_splits,
     build_hybrid_retriever,
     list_document_paths,
 )
-from langchain_core.embeddings.fake import FakeEmbeddings
 
 # ── fixtures ──────────────────────────────────────────────────────────
 
