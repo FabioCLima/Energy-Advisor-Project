@@ -23,7 +23,7 @@ from loguru import logger
 
 from ..config import Settings
 from ..services.database import DatabaseManager
-from ..services.pricing import _BANDEIRA_DEFAULT, BANDEIRAS
+from ..services.aneel_client import get_bandeira as _get_bandeira
 
 # ── Estrutura de perfil de dispositivo ───────────────────────────────
 
@@ -78,7 +78,7 @@ def _is_ev_charging(dt: datetime) -> bool:
 
 def _hourly_rate_brl(dt: datetime) -> float:
     """Tarifa Enel SP em R$/kWh com bandeira ANEEL para o mês."""
-    _, adicional = BANDEIRAS.get((dt.year, dt.month), _BANDEIRA_DEFAULT)
+    _, adicional = _get_bandeira(dt)
     if 18 <= dt.hour < 21:
         return 0.987 + adicional
     if dt.hour < 6:

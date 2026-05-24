@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     documents_dir: str = Field("data/documents", alias="ENERGY_ADVISOR_DOCS_DIR")
     vectorstore_dir: str = Field("data/vectorstore", alias="ENERGY_ADVISOR_VECTORSTORE_DIR")
     models_dir: str = Field("data/models", alias="ENERGY_ADVISOR_MODELS_DIR")
+    aneel_cache_path: str = Field(
+        "data/aneel_bandeiras_cache.json",
+        alias="ENERGY_ADVISOR_ANEEL_CACHE_PATH",
+    )
+    aneel_fetch_enabled: bool = Field(True, alias="ENERGY_ADVISOR_ANEEL_FETCH_ENABLED")
+    aneel_allow_insecure_ssl: bool = Field(False, alias="ENERGY_ADVISOR_ANEEL_ALLOW_INSECURE_SSL")
 
     # ── Forecasting / ML ─────────────────────────────────────────────
     usage_forecast_mode: str = Field("auto", alias="ENERGY_ADVISOR_USAGE_FORECAST_MODE")
