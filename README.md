@@ -24,9 +24,27 @@ echo "OPENAI_API_KEY=sk-..." > .env
 docker compose up
 ```
 
-Open **http://localhost:8501** — dashboard loads with 90 days of sample data pre-populated.
+Open **http://localhost:8501** — the container bootstraps João's demo dataset and local forecast artifacts on first run.
 
 > No Docker? See [manual setup](#manual-setup) below.
+> Cloud deploy notes: [Streamlit Cloud](deploy/streamlit/README.md) · [AWS App Runner](deploy/aws/README.md)
+
+---
+
+## Deployment Surfaces
+
+This project is intentionally packaged for two complementary deployment surfaces:
+
+| Surface | Purpose | Why it matters in interview |
+|---|---|---|
+| Streamlit Cloud | Public demo URL for the dashboard + chat | Shows product thinking and fast iteration |
+| AWS App Runner | Production-style container deployment | Shows cloud, container, env-var, and bootstrap discipline |
+
+The same codebase now provisions demo assets on first boot: SQLite tables, João sample data, and local forecasting artifacts. The container also supports **two runtime modes** through environment variables:
+- `SERVICE_MODE=streamlit`
+- `SERVICE_MODE=api`
+
+That makes it easy to explain a clean progression from demo surface to cloud-native service without overcomplicating the architecture.
 
 ---
 
@@ -223,7 +241,7 @@ Known limitation: the model forecasts recursively, so error accumulates with lon
 | Validation | Pydantic v2 + Pydantic-settings |
 | Dashboard | Streamlit + Plotly |
 | Logging | Loguru (structured) + LangSmith (optional tracing) |
-| Container | Docker + Docker Compose |
+| Container | Docker + Docker Compose · single image with `streamlit` / `api` runtime modes |
 | Tests | pytest · 85 tests · 87% coverage on core |
 | Linting | Ruff |
 
@@ -261,7 +279,10 @@ Energy-Advisor-Project/
 │   └── vectorstore/              ← ChromaDB index (generated)
 ├── Dockerfile
 ├── docker-compose.yml
-└── docker-entrypoint.sh
+├── docker-entrypoint.sh
+└── deploy/
+    ├── aws/                  ← App Runner notes + env example
+    └── streamlit/            ← Streamlit Cloud notes
 ```
 
 ---
@@ -280,6 +301,8 @@ cp .env.example .env
 # Bootstrap data (first run only)
 python -m energy_advisor.bootstrap.db_setup
 python -m energy_advisor.bootstrap.sample_data
+python -m energy_advisor.bootstrap.ml_train
+# Optional: requires embedding credentials
 python -m energy_advisor.bootstrap.rag_setup
 
 # Run dashboard
