@@ -62,10 +62,12 @@ ALL_SCENARIOS: list[Scenario] = [
     Scenario(
         id="savings_ac_shift",
         question="Quanto economizaria por mês se desligasse o ar-condicionado do escritório entre 18h e 20h?",
-        required_tools=["calculate_energy_savings", "get_electricity_prices"],
+        required_tools=["calculate_energy_savings"],
         judge_rubric=(
             "A resposta deve incluir estimativa de economia em kWh e R$ por mês, "
-            "com a diferença de tarifa entre o horário de ponta e o alternativo explicitada."
+            "com a tarifa usada no cálculo explicitada. Chamar get_electricity_prices é desejável "
+            "quando a resposta comparar janelas tarifárias atuais, mas calculate_energy_savings "
+            "já aceita price_per_kwh e cobre o contrato mínimo deste cenário."
         ),
         tags=["savings", "home_office", "pricing"],
     ),

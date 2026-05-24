@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+import certifi
 from loguru import logger
 
 _FALLBACK: dict[str, tuple[str, float]] = {
@@ -130,7 +131,7 @@ def _make_ssl_context(allow_insecure_ssl: bool) -> ssl.SSLContext:
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         return ctx
-    return ssl.create_default_context()
+    return ssl.create_default_context(cafile=certifi.where())
 
 
 def _fetch_aneel(timeout: int = 10, allow_insecure_ssl: bool = False) -> AneelCacheBundle | None:
