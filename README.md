@@ -306,7 +306,7 @@ python -m energy_advisor.bootstrap.ml_train
 python -m energy_advisor.bootstrap.rag_setup
 
 # Run dashboard
-streamlit run app/streamlit_app.py
+python -m streamlit run streamlit_app.py
 
 # Run tests
 pytest tests/ -v
