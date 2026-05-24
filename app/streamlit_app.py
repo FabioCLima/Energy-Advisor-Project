@@ -53,11 +53,11 @@ with st.sidebar:
         "vermelha_1": "🔴", "vermelha_2": "🔴",
     }
     icon = _bandeira_icon.get(bandeira_nome, "⚪")
-    st.markdown(f"**{icon} ANEEL Tariff Flag**")
+    st.markdown(f"**{icon} ANEEL Energy Rate Flag**")
     st.markdown(f"**{bandeira_nome.replace('_', ' ').title()}**")
     st.caption(
         f"+R$ {adicional:.4f}/kWh surcharge" if adicional > 0
-        else "No surcharge on base tariff"
+        else "No surcharge on base rate"
     )
     st.divider()
 
@@ -81,13 +81,13 @@ with tab_dash:
     st.divider()
 
     # U2: Left column = device breakdown + home office
-    #     Right column = time-series analysis (solar + tariffs)
+    #     Right column = time-series analysis (solar + rates)
     col_left, col_right = st.columns(2)
 
     with col_left:
         st.plotly_chart(
             chart_consumption_by_device(settings.db_path, days=days_filter),
-            use_container_width=True,
+            width="stretch",
         )
         st.divider()
         # D1: Tesla in its own section
@@ -98,10 +98,10 @@ with tab_dash:
         # Solar chart (top)
         st.plotly_chart(
             chart_solar_vs_consumption(settings.db_path, days=days_filter),
-            use_container_width=True,
+            width="stretch",
         )
-        # Tariff chart directly below solar (U2 — same column = temporal analysis)
-        st.plotly_chart(chart_tou_rates(), use_container_width=True)
+        # Rate chart directly below solar (U2 — same column = temporal analysis)
+        st.plotly_chart(chart_tou_rates(), width="stretch")
         st.caption(
             "🟢 Off-peak night (0h–5h): best window for EV charging and heavy appliances.  "
             "🔴 Peak (18h–20h): avoid intensive consumption."
@@ -121,7 +121,7 @@ with tab_dash:
     col_ho, col_info = st.columns([2, 1])
     with col_ho:
         fig_office, summary = chart_home_office_report(settings.db_path, days=days_filter)
-        st.plotly_chart(fig_office, use_container_width=True)
+        st.plotly_chart(fig_office, width="stretch")
     with col_info:
         if summary:
             st.metric("Period Total", f"R$ {summary['total_brl']:.2f}", help=f"{summary['total_kwh']:.1f} kWh")
@@ -134,5 +134,5 @@ with tab_dash:
 # ── Chat tab ──────────────────────────────────────────────────────────
 with tab_chat:
     st.header("Ask the Energy Advisor")
-    st.caption("ReAct agent with access to consumption data, solar generation, tariffs, and knowledge base.")
+    st.caption("ReAct agent with access to consumption data, solar generation, rates, and knowledge base.")
     render_chat()

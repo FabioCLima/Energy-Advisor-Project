@@ -63,7 +63,7 @@ def render_chat() -> None:
         st.markdown("**Start with one of these questions:**")
         cols = st.columns(2)
         for i, q in enumerate(_SUGGESTED_QUESTIONS):
-            if cols[i % 2].button(q, key=f"sugg_{i}", use_container_width=True):
+            if cols[i % 2].button(q, key=f"sugg_{i}", width="stretch"):
                 st.session_state["_pending"] = q
                 st.rerun()
 
