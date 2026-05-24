@@ -47,6 +47,7 @@ class Settings(BaseSettings):
 
     # ── Forecasting / ML ─────────────────────────────────────────────
     usage_forecast_mode: str = Field("auto", alias="ENERGY_ADVISOR_USAGE_FORECAST_MODE")
+    bootstrap_vectorstore: bool = Field(False, alias="ENERGY_ADVISOR_BOOTSTRAP_VECTORSTORE")
 
     # ── Observability ────────────────────────────────────────────────
     log_level: str = Field("INFO", alias="LOG_LEVEL")
