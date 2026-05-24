@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 
 import pytest
+
 from energy_advisor.config import Settings
 from energy_advisor.services.database import DatabaseManager
 

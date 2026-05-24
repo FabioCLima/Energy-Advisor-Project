@@ -6,26 +6,10 @@ Run from project root:
 """
 from __future__ import annotations
 
-import sys
 from datetime import datetime
-from pathlib import Path
-
-# Ensure energy_advisor package is importable from any working directory
-_ROOT = Path(__file__).parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
 
 import streamlit as st
 
-st.set_page_config(
-    page_title="EcoHome Energy Advisor",
-    page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-from energy_advisor.config import Settings
-from energy_advisor.services.pricing import get_bandeira
 from app.components.charts import (
     chart_consumption_by_device,
     chart_home_office_report,
@@ -37,6 +21,15 @@ from app.components.charts import (
     render_metrics,
 )
 from app.components.chat import render_chat
+from energy_advisor.config import Settings
+from energy_advisor.services.pricing import get_bandeira
+
+st.set_page_config(
+    page_title="EcoHome Energy Advisor",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 settings = Settings()
 

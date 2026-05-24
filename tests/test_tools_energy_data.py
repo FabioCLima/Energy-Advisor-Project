@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
+
 from energy_advisor.services.database import DatabaseManager
 from energy_advisor.tools.energy_data import (
     get_recent_energy_summary,

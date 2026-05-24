@@ -36,7 +36,7 @@ class _BM25Retriever(BaseRetriever):
         return [self.docs[i] for i in top_indices]
 
     @classmethod
-    def from_documents(cls, documents: list[Document], k: int = 5) -> "_BM25Retriever":
+    def from_documents(cls, documents: list[Document], k: int = 5) -> _BM25Retriever:
         return cls(docs=documents, k=k)
 
 
