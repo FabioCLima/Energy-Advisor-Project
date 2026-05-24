@@ -4,7 +4,7 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-ReAct_Agent-6B48FF?logo=chainlink&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?logo=streamlit&logoColor=white)
 ![Open-Meteo](https://img.shields.io/badge/Open--Meteo-Real_Weather-4CAF50?logo=cloudflarepages&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-87_passed-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-102_passed-brightgreen?logo=pytest&logoColor=white)
 ![Coverage](https://img.shields.io/badge/Coverage-87%25-brightgreen?logo=pytest&logoColor=white)
 ![CI](https://github.com/FabioCLima/Energy-Advisor-Project/actions/workflows/ci.yml/badge.svg?branch=master)
 ![Docker](https://img.shields.io/badge/GHCR-ghcr.io%2Ffabiolima%2Fenergy--advisor-2496ED?logo=docker&logoColor=white)
@@ -52,6 +52,63 @@ The same codebase now provisions demo assets on first boot: SQLite tables, João
 - `SERVICE_MODE=api`
 
 That makes it easy to explain a clean progression from demo surface to cloud-native service without overcomplicating the architecture.
+
+---
+
+## Product & MLOps Assessment
+
+This repository is a **standalone product demo**, not a claim of full enterprise production scale. The goal is to show the essential building blocks of an AI/ML product in the smallest credible scope: a usable dashboard, an API, a tool-using agent, model evaluation, observability, drift checks, guardrails, tests, Docker packaging and cloud deployment paths.
+
+That framing matters for recruiters and interviewers: the project demonstrates that the same engineering habits used in larger ML platforms can be applied deliberately in a compact prototype.
+
+| Capability | Standalone implementation in this repo | Production-scale evolution |
+|---|---|---|
+| Product surface | Streamlit dashboard + chat | Dedicated frontend, auth, user accounts |
+| Agent service | FastAPI + LangGraph ReAct agent | Multi-tenant API, rate limits, service mesh |
+| Model/agent evaluation | Scenario harness, tool trajectory checks, optional LLM-as-judge | CI quality gates, larger benchmark sets, human review workflows |
+| Observability | Local JSONL traces with tools, latency, estimated tokens/cost | LangSmith/OpenTelemetry traces, Prometheus/Grafana, CloudWatch alarms |
+| Cost control | Per-request estimated cost and budget flags | Budget enforcement, model routing, cache policy, org-level cost dashboards |
+| Drift monitoring | Offline baseline vs current window checks for energy data and forecast error | Scheduled Evidently/MLflow jobs, retraining triggers, model registry governance |
+| Guardrails | Deterministic prompt-injection and secret-leak checks | Policy engine, PII detection, red-team suites, audit logs |
+| Deployment | Docker, Streamlit Cloud path, AWS App Runner path | IaC, blue/green deploys, autoscaling, secrets manager, VPC controls |
+
+### How MLE and AI Engineer converge here
+
+This project sits deliberately at the intersection of both roles:
+
+- **MLE angle:** forecasting model, validation metrics, drift monitoring, model artifacts, evaluation harness and deployment discipline.
+- **AI Engineer angle:** LangGraph agent, tool calling, RAG-style retrieval, prompt/system design, LLM observability, guardrails and cost/latency control.
+
+The strongest interview positioning is not “this is only MLE” or “this is only AI Engineering”. The sharper story is: **I built an AI product prototype with MLE-grade evaluation and operational controls.**
+
+### Observability with LangSmith
+
+LangSmith is optional in this project, but the agent already supports LangChain/LangGraph tracing environment variables. To measure agent behavior in LangSmith, set:
+
+```bash
+export LANGCHAIN_TRACING_V2=true
+export LANGCHAIN_API_KEY=ls__...
+export LANGCHAIN_PROJECT=ecohome-energy-advisor
+```
+
+Then run either the API or evaluation harness. In LangSmith, inspect:
+
+- tool-call sequence per request
+- LLM latency and token usage
+- failed runs and exceptions
+- prompt, model and response versions
+- scenario traces from the evaluation harness
+- regressions when changing prompts, tools or models
+
+The advantage is practical: local JSONL traces prove the concept and work anywhere; LangSmith gives a visual trace UI for debugging, demos and team review.
+
+### Five-minute CAR narrative
+
+- **Context:** households with solar, EV and home office have fragmented energy, weather and pricing data.
+- **Action:** built a Streamlit/API product demo with a LangGraph agent, specialist tools, forecast model, evaluation harness, observability, drift checks, guardrails and Docker/AWS-ready deployment.
+- **Result:** the demo can answer grounded energy questions, evaluate tool trajectories, track latency/cost, detect data/model drift signals and reject unsafe requests in a standalone environment.
+
+For the full interview talk track, see [`interview/CAR_5MIN.md`](interview/CAR_5MIN.md). For implementation rationale, see [`docs/mlops_implementation_notes.md`](docs/mlops_implementation_notes.md).
 
 ---
 
@@ -249,7 +306,7 @@ Known limitation: the model forecasts recursively, so error accumulates with lon
 | Dashboard | Streamlit + Plotly |
 | Logging | Loguru (structured) + LangSmith (optional tracing) |
 | Container | Docker + Docker Compose · single image with `streamlit` / `api` runtime modes |
-| Tests | pytest · 85 tests · 87% coverage on core |
+| Tests | pytest · 102 tests · 87% coverage on core |
 | Linting | Ruff |
 
 ---
