@@ -25,7 +25,7 @@ if [ "${SERVICE_MODE}" = "api" ]; then
 fi
 
 echo "[entrypoint] Starting Streamlit on port ${PORT}..."
-exec python -m streamlit run streamlit_app.py \
+exec python -m streamlit run app/streamlit_app.py \
     --server.port="${PORT}" \
     --server.address=0.0.0.0 \
     --server.headless=true \
