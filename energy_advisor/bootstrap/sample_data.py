@@ -22,8 +22,8 @@ from typing import NamedTuple
 from loguru import logger
 
 from ..config import Settings
-from ..services.database import DatabaseManager
 from ..services.aneel_client import get_bandeira as _get_bandeira
+from ..services.database import DatabaseManager
 
 # ── Estrutura de perfil de dispositivo ───────────────────────────────
 

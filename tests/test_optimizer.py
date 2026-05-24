@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-import pytest
-
 from energy_advisor.services.database import DatabaseManager
 from energy_advisor.services.optimizer import Recommendation, generate_recommendations
 
