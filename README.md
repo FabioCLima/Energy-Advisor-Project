@@ -4,7 +4,7 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-ReAct_Agent-6B48FF?logo=chainlink&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?logo=streamlit&logoColor=white)
 ![Open-Meteo](https://img.shields.io/badge/Open--Meteo-Real_Weather-4CAF50?logo=cloudflarepages&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-69_passed-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-76_passed-brightgreen?logo=pytest&logoColor=white)
 ![Coverage](https://img.shields.io/badge/Coverage-87%25-brightgreen?logo=pytest&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
@@ -29,6 +29,20 @@ Open **http://localhost:8501** — dashboard loads with 90 days of sample data p
 
 ---
 
+## Run the API (FastAPI + LangServe)
+
+```bash
+uv run uvicorn energy_advisor.api.app:app --reload --port 8000
+```
+
+Open:
+- **http://localhost:8000/docs** (OpenAPI)
+- **http://localhost:8000/advisor/playground/** (LangServe playground)
+
+LangServe endpoints are exposed under `POST /advisor/invoke` and `POST /advisor/stream`.
+
+---
+
 ## The Problem
 
 Brazilian households with solar panels, EVs, and home offices face three disconnected data sources:
@@ -42,7 +56,7 @@ Manually cross-referencing these to answer "what's the cheapest time to charge m
 
 ## What the Agent Does
 
-The LangGraph ReAct agent coordinates **7 specialized tools** and reasons over multiple sources before responding:
+The LangGraph ReAct agent coordinates **8 specialized tools** and reasons over multiple sources before responding:
 
 | Tool | Data source | What it enables |
 |---|---|---|
@@ -53,6 +67,7 @@ The LangGraph ReAct agent coordinates **7 specialized tools** and reasons over m
 | `search_energy_tips` | ChromaDB RAG (5 documents) | "Best practices for EV charging?" |
 | `calculate_energy_savings` | Savings math engine | "How much would I save shifting to off-peak?" |
 | `get_recent_energy_summary` | SQLite aggregate | Context for open-ended questions |
+| `predict_energy_usage` | SQLite + baseline/ML model artifact | "What will my usage look like tomorrow?" |
 
 **Example exchange:**
 
@@ -71,7 +86,7 @@ flowchart TD
     Agent["🤖 EnergyAdvisorAgent\nLangGraph ReAct loop"]
     LLM["🧠 GPT-4o-mini\nReasoning & tool selection"]
 
-    subgraph Tools["🔧 7 Specialised Tools"]
+    subgraph Tools["🔧 8 Specialised Tools"]
         T1["query_energy_usage"]
         T2["query_solar_generation"]
         T3["get_electricity_prices"]
@@ -79,6 +94,7 @@ flowchart TD
         T5["search_energy_tips"]
         T6["calculate_energy_savings"]
         T7["get_recent_energy_summary"]
+        T8["predict_energy_usage"]
     end
 
     subgraph Data["💾 Data Layer"]
