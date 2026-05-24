@@ -16,6 +16,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Pre-bake demo assets (SQLite + sample data + ML model artifacts) at build time.
+# Eliminates the 8-minute cold-start training on every fresh container.
+# No API key needed: vectorstore bootstrap is skipped (requires embeddings at runtime).
+RUN python - <<'EOF'
+from energy_advisor.bootstrap.runtime import ensure_demo_assets
+from energy_advisor.config import Settings
+ensure_demo_assets(Settings(), ensure_vectorstore_index=False)
+EOF
+
 EXPOSE 8501 8000
 
 COPY docker-entrypoint.sh /docker-entrypoint.sh
