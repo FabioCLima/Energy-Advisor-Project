@@ -1,31 +1,32 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# ── Step 1: Database + sample data ───────────────────────────────────
-if [ ! -f "data/energy_data.db" ]; then
-    echo "[entrypoint] First run — bootstrapping João's energy database (~10s)..."
-    python -m energy_advisor.bootstrap.db_setup
-    python -m energy_advisor.bootstrap.sample_data
-    echo "[entrypoint] Database ready."
+SERVICE_MODE="${SERVICE_MODE:-streamlit}"
+PORT="${PORT:-8501}"
+BOOTSTRAP_VECTORSTORE="${ENERGY_ADVISOR_BOOTSTRAP_VECTORSTORE:-false}"
+
+echo "[entrypoint] service_mode=${SERVICE_MODE} port=${PORT}"
+
+python - <<'PY'
+import os
+from energy_advisor.bootstrap.runtime import ensure_demo_assets
+from energy_advisor.config import Settings
+
+settings = Settings()
+ensure_demo_assets(
+    settings=settings,
+    ensure_vectorstore_index=os.getenv("ENERGY_ADVISOR_BOOTSTRAP_VECTORSTORE", "false").lower() == "true",
+)
+PY
+
+if [ "${SERVICE_MODE}" = "api" ]; then
+    echo "[entrypoint] Starting FastAPI + LangServe on port ${PORT}..."
+    exec uvicorn energy_advisor.api.app:app --host 0.0.0.0 --port "${PORT}"
 fi
 
-# ── Step 1b: Optional ML training (sklearn) ──────────────────────────
-if [ "${ENERGY_ADVISOR_TRAIN_ML_ON_START:-false}" = "true" ]; then
-    echo "[entrypoint] Training ML usage forecasters (ENERGY_ADVISOR_TRAIN_ML_ON_START=true)..."
-    python -m energy_advisor.bootstrap.ml_train
-    echo "[entrypoint] ML models ready."
-fi
-
-# ── Step 2: RAG vectorstore ───────────────────────────────────────────
-if [ ! -f "data/vectorstore/chroma.sqlite3" ]; then
-    echo "[entrypoint] Building RAG vectorstore (requires OPENAI_API_KEY)..."
-    python -m energy_advisor.bootstrap.rag_setup
-    echo "[entrypoint] Vectorstore ready."
-fi
-
-echo "[entrypoint] Starting EcoHome Energy Advisor on port 8501..."
+echo "[entrypoint] Starting Streamlit on port ${PORT}..."
 exec streamlit run app/streamlit_app.py \
-    --server.port=8501 \
+    --server.port="${PORT}" \
     --server.address=0.0.0.0 \
     --server.headless=true \
     --browser.gatherUsageStats=false

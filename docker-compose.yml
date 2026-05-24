@@ -4,19 +4,18 @@ services:
     ports:
       - "8501:8501"
     environment:
+      - SERVICE_MODE=streamlit
+      - PORT=8501
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      # Streamlit runs the app script from `app/`, which can drop the repo root from sys.path.
-      # Ensure absolute imports like `from app...` and `from energy_advisor...` work in Docker.
-      - PYTHONPATH=/app
       - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-}
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
       - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-ecohome-energy-advisor}
       - LANGCHAIN_ENDPOINT=${LANGCHAIN_ENDPOINT:-}
+      - ENERGY_ADVISOR_BOOTSTRAP_VECTORSTORE=${ENERGY_ADVISOR_BOOTSTRAP_VECTORSTORE:-false}
     volumes:
       - ecohome_data:/app/data
     restart: unless-stopped
     healthcheck:
-      # Use Python stdlib instead of curl (curl isn't installed in the slim image).
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/healthz', timeout=5)"]
       interval: 30s
       timeout: 10s
