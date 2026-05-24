@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Iterator
 from datetime import datetime, timedelta
 from typing import Annotated, Any, TypedDict
@@ -21,6 +22,7 @@ from loguru import logger
 
 from .config import Settings
 from .logging import configure_logging
+from .observability import TraceRecorder, build_agent_trace, new_request_id
 from .prompts import SYSTEM_INSTRUCTIONS
 from .tools import TOOL_KIT
 
@@ -76,6 +78,8 @@ class EnergyAdvisorAgent:
         )
 
         self._system_message = SystemMessage(content=instructions)
+        self._selected_model = selected_model
+        self._trace_recorder = TraceRecorder(self.settings.observability_trace_path)
 
         llm = ChatOpenAI(
             model=selected_model,
@@ -139,10 +143,34 @@ class EnergyAdvisorAgent:
         Returns:
             The LangGraph state dict. Final answer is in result["messages"][-1].content.
         """
-        return self.graph.invoke(
-            {"messages": self._build_messages(question, context)},
-            config=config,
+        request_id, metadata = self._observability_context(config)
+        t0 = time.perf_counter()
+        try:
+            result = self.graph.invoke(
+                {"messages": self._build_messages(question, context)},
+                config=config,
+            )
+        except Exception as exc:
+            elapsed = time.perf_counter() - t0
+            self._record_trace(
+                question=question,
+                result=None,
+                latency_s=elapsed,
+                request_id=request_id,
+                metadata=metadata,
+                error=str(exc),
+            )
+            raise
+
+        elapsed = time.perf_counter() - t0
+        self._record_trace(
+            question=question,
+            result=result,
+            latency_s=elapsed,
+            request_id=request_id,
+            metadata=metadata,
         )
+        return result
 
     def stream(
         self,
@@ -179,6 +207,42 @@ class EnergyAdvisorAgent:
             elif isinstance(chunk, ToolMessage) and chunk.name:
                 if chunk.name not in self.last_tools_used:
                     self.last_tools_used.append(chunk.name)
+
+
+    def _observability_context(self, config: RunnableConfig | None) -> tuple[str, dict[str, Any]]:
+        metadata: dict[str, Any] = {}
+        if isinstance(config, dict):
+            raw_metadata = config.get("metadata") or {}
+            if isinstance(raw_metadata, dict):
+                metadata.update(raw_metadata)
+        request_id = str(metadata.get("request_id") or new_request_id())
+        metadata.setdefault("request_id", request_id)
+        return request_id, metadata
+
+    def _record_trace(
+        self,
+        *,
+        question: str,
+        result: dict[str, Any] | None,
+        latency_s: float,
+        request_id: str,
+        metadata: dict[str, Any],
+        error: str | None = None,
+    ) -> None:
+        if not self.settings.observability_enabled:
+            return
+        trace = build_agent_trace(
+            question=question,
+            result=result,
+            model=self._selected_model,
+            latency_s=latency_s,
+            max_cost_usd=self.settings.max_request_cost_usd,
+            max_latency_s=self.settings.max_request_latency_s,
+            request_id=request_id,
+            error=error,
+            metadata=metadata,
+        )
+        self._trace_recorder.record(trace)
 
     def get_agent_tools(self) -> list[str]:
         """Return the names of all registered tools."""
