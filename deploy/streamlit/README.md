@@ -1,7 +1,7 @@
 # Streamlit Cloud Deployment
 
 ## App target
-- Main file: `app/streamlit_app.py`
+- Main file: `streamlit_app.py`
 - Python version: `3.12`
 
 ## Required secrets
