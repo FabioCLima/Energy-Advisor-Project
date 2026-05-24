@@ -5,6 +5,7 @@ from datetime import datetime
 
 import pytest
 
+from energy_advisor.services import aneel_client
 from energy_advisor.services.pricing import generate_time_of_use_prices
 
 
@@ -84,3 +85,41 @@ def test_all_rates_positive():
         assert r["rate"] > 0, f"Rate at hour {r['hour']} should be positive"
 
 
+
+
+def test_pricing_exposes_data_provenance(monkeypatch, tmp_path):
+    monkeypatch.setenv("ENERGY_ADVISOR_ANEEL_CACHE_PATH", str(tmp_path / "aneel_cache.json"))
+    monkeypatch.setenv("ENERGY_ADVISOR_ANEEL_FETCH_ENABLED", "false")
+    aneel_client.invalidate_cache()
+
+    result = generate_time_of_use_prices(date="2026-05-15")
+
+    assert result["data_source"] == "embedded_fallback"
+    assert result["fallback_used"] is True
+    assert result["fetched_at"] is None
+
+
+def test_pricing_uses_disk_cache_when_available(monkeypatch, tmp_path):
+    cache_path = tmp_path / "aneel_cache.json"
+    cache_path.write_text(
+        """{
+  "fetched_at": "2026-05-24T10:00:00",
+  "source": "disk_cache",
+  "fallback_used": false,
+  "bandeiras": {
+    "2026-05": ["amarela", 0.01234]
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ENERGY_ADVISOR_ANEEL_CACHE_PATH", str(cache_path))
+    monkeypatch.setenv("ENERGY_ADVISOR_ANEEL_FETCH_ENABLED", "false")
+    aneel_client.invalidate_cache()
+
+    result = generate_time_of_use_prices(date="2026-05-15")
+
+    assert result["bandeira"] == "amarela"
+    assert result["bandeira_adicional_brl"] == pytest.approx(0.01234, abs=0.00001)
+    assert result["data_source"] == "disk_cache"
+    assert result["fallback_used"] is False

@@ -51,6 +51,10 @@ class ElectricityPrices(BaseModel):
     unit: str = "per_kWh"
     bandeira: str = "verde"
     distribuidora: str = "Enel SP"
+    bandeira_adicional_brl: float = 0.0
+    data_source: str = "embedded_fallback"
+    fetched_at: str | None = None
+    fallback_used: bool = False
     hourly_rates: list[ElectricityRate]
 
 
