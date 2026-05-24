@@ -83,7 +83,7 @@ The strongest interview positioning is not “this is only MLE” or “this is 
 
 ### Observability with LangSmith
 
-LangSmith is optional in this project, but the agent already supports LangChain/LangGraph tracing environment variables. To measure agent behavior in LangSmith, set:
+LangSmith is optional in this project, but the agent already supports LangChain/LangGraph tracing environment variables. The hosted UI is https://smith.langchain.com and the default API endpoint is https://api.smith.langchain.com. To measure agent behavior in LangSmith, set:
 
 ```bash
 export LANGCHAIN_TRACING_V2=true
@@ -102,13 +102,9 @@ Then run either the API or evaluation harness. In LangSmith, inspect:
 
 The advantage is practical: local JSONL traces prove the concept and work anywhere; LangSmith gives a visual trace UI for debugging, demos and team review.
 
-### Five-minute CAR narrative
+For implementation rationale, see [`docs/mlops_implementation_notes.md`](docs/mlops_implementation_notes.md).
 
-- **Context:** households with solar, EV and home office have fragmented energy, weather and pricing data.
-- **Action:** built a Streamlit/API product demo with a LangGraph agent, specialist tools, forecast model, evaluation harness, observability, drift checks, guardrails and Docker/AWS-ready deployment.
-- **Result:** the demo can answer grounded energy questions, evaluate tool trajectories, track latency/cost, detect data/model drift signals and reject unsafe requests in a standalone environment.
-
-For the full interview talk track, see [`interview/CAR_5MIN.md`](interview/CAR_5MIN.md). For implementation rationale, see [`docs/mlops_implementation_notes.md`](docs/mlops_implementation_notes.md).
+A real LangSmith screenshot can be added after running the agent with tracing enabled. For a public repository, use a sanitized trace view that shows the run tree, tool calls, latency and token/cost metadata without exposing API keys, private prompts or user data.
 
 ---
 
