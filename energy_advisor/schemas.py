@@ -91,7 +91,7 @@ class UsageForecastPoint(BaseModel):
 
 class UsageForecast(BaseModel):
     device_type: str | None = Field(None, description="Optional device_type filter used for the forecast.")
-    method: Literal["seasonal_naive"] = "seasonal_naive"
+    method: Literal["seasonal_naive", "sklearn_hgb"] = "seasonal_naive"
     horizon_hours: int = Field(..., ge=1, le=168)
     points: list[UsageForecastPoint]
     total_predicted_kwh: float = Field(..., ge=0.0)

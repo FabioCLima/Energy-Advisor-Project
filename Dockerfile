@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir \
     "langgraph>=0.2.0" \
     "loguru>=0.7.2" \
     "numpy>=1.26.4" \
+    "scikit-learn>=1.4.0" \
     "openai>=1.40.0" \
     "pandas>=2.2.3" \
     "plotly>=6.7.0" \

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+
 from energy_advisor.config import Settings
 
 
@@ -63,3 +64,18 @@ def test_default_paths(monkeypatch):
     assert s.db_path == "data/energy_data.db"
     assert s.documents_dir == "data/documents"
     assert s.vectorstore_dir == "data/vectorstore"
+
+
+def test_default_models_dir_and_usage_forecast_mode(monkeypatch):
+    monkeypatch.delenv("ENERGY_ADVISOR_MODELS_DIR", raising=False)
+    monkeypatch.delenv("ENERGY_ADVISOR_USAGE_FORECAST_MODE", raising=False)
+    s = Settings()
+    assert s.models_dir == "data/models"
+    assert s.usage_forecast_mode == "auto"
+    assert s.usage_forecast_model_path("EV").endswith("data/models/usage_forecaster_ev.joblib")
+
+
+def test_invalid_usage_forecast_mode_raises(monkeypatch):
+    monkeypatch.setenv("ENERGY_ADVISOR_USAGE_FORECAST_MODE", "turbo")
+    with pytest.raises(ValueError):
+        Settings()
