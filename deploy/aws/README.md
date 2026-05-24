@@ -3,7 +3,7 @@
 ## Recommended interview setup
 Use the same container image for two optional services:
 - `streamlit` for the demo UI
-- `api` for the FastAPI + LangServe surface
+- `api` for the native FastAPI surface
 
 For the interview, the strongest story is to deploy the Streamlit service first and mention that the image also supports an API mode through `SERVICE_MODE=api`.
 
