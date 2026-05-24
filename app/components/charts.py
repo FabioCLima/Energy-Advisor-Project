@@ -13,7 +13,9 @@ import streamlit as st
 
 from energy_advisor.services.database import DatabaseManager
 from energy_advisor.services.forecasting import generate_hourly_forecast
+from energy_advisor.services.forecast_router import route_usage_forecast
 from energy_advisor.services.pricing import generate_time_of_use_prices
+from energy_advisor.services.usage_forecasting import UsageForecastParams, load_hourly_usage_series, seasonal_naive_usage_forecast
 
 # ── Constants ─────────────────────────────────────────────────────────
 
@@ -41,6 +43,10 @@ HOME_OFFICE_DEVICES = frozenset({
 })
 
 _AVG_RATE_BRL = 0.656   # Enel SP mid-peak base rate used for solar savings estimate
+
+# João's solar panel — used in forecast conversion
+_PANEL_KWP = 4.0    # installed capacity (10 × 400W modules)
+_PANEL_EFF = 0.85   # derating: inverter losses + temperature + dust
 
 
 # ── Data loaders (cached) ─────────────────────────────────────────────
@@ -421,38 +427,36 @@ def render_daily_insight(db_path: str) -> None:
     and solar irradiance. Weather data from Open-Meteo (falls back to synthetic).
     """
     pricing = generate_time_of_use_prices()
-    now_h   = datetime.now().hour
-    rates   = {r["hour"]: r for r in pricing["hourly_rates"]}
+    now_h = datetime.now().hour
+    rates = {r["hour"]: r for r in pricing["hourly_rates"]}
     current = rates[now_h]
-    period  = current["period"]
-    rate    = current["rate"]
+    period = current["period"]
+    rate = current["rate"]
 
-    # Find cheapest window in the next 12 hours
     upcoming = [(h % 24, rates[h % 24]) for h in range(now_h + 1, now_h + 13)]
     cheapest = min(upcoming, key=lambda x: x[1]["rate"])
 
-    # Real-time weather
-    weather      = _load_weather()
-    hourly_wx    = {h["hour"]: h for h in weather.get("hourly", [])}
-    current_wx   = hourly_wx.get(now_h, {})
-    irradiance   = current_wx.get("solar_irradiance", 0.0)
-    temperature  = current_wx.get("temperature_c")
-    data_source  = weather.get("data_source", "synthetic")
+    weather = _load_weather()
+    hourly_wx = {h["hour"]: h for h in weather.get("hourly", [])}
+    current_wx = hourly_wx.get(now_h, {})
+    irradiance = current_wx.get("solar_irradiance", 0.0)
+    temperature = current_wx.get("temperature_c")
+    weather_source = weather.get("data_source", "synthetic")
 
-    # Irradiance thresholds for a 4kWp panel (roughly: >500 = good generation)
     solar_active = irradiance > 100.0
     solar_strong = irradiance > 500.0
 
     period_label = _PERIOD_LABEL.get(period, period)
-    period_icon  = "🟢" if period == "off_peak" else "🟡" if period == "mid_peak" else "🔴"
+    period_icon = "🟢" if period == "off_peak" else "🟡" if period == "mid_peak" else "🔴"
 
-    source_badge = "🌐 Open-Meteo" if data_source == "open_meteo" else "⚙️ estimated"
-    temp_str     = f" · {temperature:.0f}°C" if temperature is not None else ""
-    irr_str      = f" · {irradiance:.0f} W/m²" if solar_active else ""
+    weather_badge = "🌐 Open-Meteo" if weather_source == "open_meteo" else "⚙️ estimated"
+    pricing_badge = pricing.get("data_source", "embedded_fallback").replace("_", " ")
+    temp_str = f" · {temperature:.0f}°C" if temperature is not None else ""
+    irr_str = f" · {irradiance:.0f} W/m²" if solar_active else ""
 
     lines = [
         f"**{period_icon} Now ({now_h}h): {period_label} — R$ {rate:.4f}/kWh**  "
-        f"_({source_badge}{temp_str}{irr_str})_",
+        f"_(rate source: {pricing_badge} · weather: {weather_badge}{temp_str}{irr_str})_",
         "",
     ]
 
@@ -592,3 +596,331 @@ def render_bill_analysis(db_path: str, days: int = 30) -> None:
             f"(≈ R\\$ {monthly_savings:,.2f}/month) — shift flexible devices and EV charging "
             f"to the off-peak window (0h–5h, R\\$ {_OFF_PEAK_RATE}/kWh)."
         )
+
+
+# ── Layer 1: ML Usage Forecast ───────────────────────────────────────
+
+_FORECAST_CATEGORIES = [
+    ("ev",        "EV (Tesla)",    "#E74C3C"),
+    ("hvac",      "HVAC",          "#F39C12"),
+    ("appliance", "Appliances",    "#2ECC71"),
+    ("computer",  "Home Office",   "#3498DB"),
+]
+
+_METHOD_LABEL = {
+    "sklearn_hgb":    "🤖 sklearn · HistGradientBoosting",
+    "seasonal_naive": "📊 Seasonal Naive (baseline)",
+}
+
+
+def render_ml_forecast_section(db_path: str) -> None:
+    """Layer 1: 24h consumption forecast with validation-aware messaging."""
+    params24 = UsageForecastParams(horizon_hours=24)
+    hours = list(range(24))
+
+    total_result = route_usage_forecast(db_path=db_path, device_type=None, params=params24)
+    method = total_result.get("method", "seasonal_naive")
+    method_label = _METHOD_LABEL.get(method, method)
+    validation = total_result.get("validation")
+    total_pts = {
+        int(p["timestamp"][11:13]): p["predicted_kwh"]
+        for p in total_result.get("points", [])
+    }
+
+    db = DatabaseManager(db_path=db_path)
+    series = load_hourly_usage_series(db, device_type=None)
+    baseline_pts_raw = seasonal_naive_usage_forecast(series, params24)
+    baseline_pts = {int(p["timestamp"][11:13]): p["predicted_kwh"] for p in baseline_pts_raw}
+
+    cat_totals: dict[str, float] = {}
+    for device_type, label, _ in _FORECAST_CATEGORIES:
+        routed = route_usage_forecast(db_path=db_path, device_type=device_type, params=params24)
+        cat_totals[label] = routed.get("total_predicted_kwh", 0.0)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=hours,
+        y=[baseline_pts.get(h, 0.0) for h in hours],
+        name="Baseline (seasonal naive)",
+        mode="lines",
+        line=dict(color="#95A5A6", width=1.5, dash="dot"),
+    ))
+    fig.add_trace(go.Scatter(
+        x=hours,
+        y=[total_pts.get(h, 0.0) for h in hours],
+        name=method_label,
+        mode="lines+markers",
+        line=dict(color="#3498DB", width=2.5),
+        marker=dict(size=5),
+        fill="tozeroy",
+        fillcolor="rgba(52,152,219,0.10)",
+    ))
+
+    now_h = datetime.now().hour
+    fig.add_vline(
+        x=now_h,
+        line_width=1.5,
+        line_dash="dot",
+        line_color="#95A5A6",
+        annotation_text=f"Now ({now_h}h)",
+        annotation_position="top right",
+        annotation_font_size=11,
+    )
+    fig.update_layout(
+        title=f"24h Consumption Forecast — Total [{method_label}]",
+        xaxis_title="Hour of day",
+        yaxis_title="kWh",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=10, r=20, t=70, b=40),
+        xaxis=dict(dtick=2, range=[0, 23], gridcolor="rgba(255,255,255,0.08)"),
+        yaxis=dict(gridcolor="rgba(255,255,255,0.08)", rangemode="nonnegative"),
+    )
+
+    total_24h = total_result.get("total_predicted_kwh", 0.0)
+    peak_h = max(total_pts, key=lambda h: total_pts[h]) if total_pts else 12
+    peak_kwh = total_pts.get(peak_h, 0.0)
+
+    metrics = st.columns(4)
+    metrics[0].metric("Total (next 24h)", f"{total_24h:.2f} kWh")
+    metrics[1].metric("Peak Hour", f"{peak_h}h ({peak_kwh:.2f} kWh)")
+    metrics[2].metric("EV Predicted", f"{cat_totals.get('EV (Tesla)', 0.0):.2f} kWh")
+    metrics[3].metric("HVAC Predicted", f"{cat_totals.get('HVAC', 0.0):.2f} kWh")
+    st.plotly_chart(fig, width="stretch")
+
+    if validation:
+        rmse_delta = validation["rmse_improvement_pct"]
+        mae_delta = validation["mae_improvement_pct"]
+        vcols = st.columns(4)
+        vcols[0].metric("Model RMSE", f"{validation['model_rmse']:.4f}")
+        vcols[1].metric("Baseline RMSE", f"{validation['baseline_rmse']:.4f}")
+        vcols[2].metric("RMSE vs baseline", f"{rmse_delta:+.2f}%")
+        vcols[3].metric("MAE vs baseline", f"{mae_delta:+.2f}%")
+        if rmse_delta >= 0 and mae_delta >= 0:
+            st.caption("Validation says the ML model improved on the baseline in this hold-out window.")
+        else:
+            st.caption("Validation is mixed: the seasonal baseline still wins on part of the hold-out. Keep both visible.")
+    else:
+        st.caption("No hold-out metrics found in the model artifact yet.")
+
+    with st.expander("Category breakdown", expanded=False):
+        cols = st.columns(len(_FORECAST_CATEGORIES))
+        for i, (_, label, _) in enumerate(_FORECAST_CATEGORIES):
+            kwh = cat_totals.get(label, 0.0)
+            pct = (kwh / total_24h * 100) if total_24h > 0 else 0.0
+            cols[i].metric(label, f"{kwh:.2f} kWh", f"{pct:.0f}% of total")
+
+
+# ── Layer 2: Optimization Recommendations ────────────────────────────
+
+_CONFIDENCE_COLOR = {"high": "🟢", "medium": "🟡", "low": "🔴"}
+_CONFIDENCE_HELP  = {
+    "high":   "ML model trained on this device type with sufficient data",
+    "medium": "ML model available but savings are small — treat as indicative",
+    "low":    "Seasonal naive baseline — train ML model to improve confidence",
+}
+
+
+def render_recommendations(db_path: str, horizon_days: int = 30) -> None:
+    """Layer 2: Ranked savings recommendations from the optimizer.
+
+    Shows what João can change, how much he saves, and how confident
+    the estimate is (sklearn_hgb = high / seasonal_naive = low).
+    """
+    from energy_advisor.services.optimizer import generate_recommendations
+
+    with st.spinner("Generating recommendations…"):
+        recs = generate_recommendations(db_path=db_path, horizon_days=horizon_days)
+
+    if not recs:
+        st.info("No optimization opportunities found for the selected period.")
+        return
+
+    total_30d = sum(r.savings_30d_brl for r in recs)
+    total_90d = sum(r.savings_90d_brl for r in recs)
+
+    # ── Header metrics ────────────────────────────────────────────────
+    h1, h2, h3 = st.columns(3)
+    h1.metric(
+        "💰 Total Savings Potential (30d)",
+        f"R$ {total_30d:,.2f}",
+        help="Sum of all recommendations projected to 30 days",
+    )
+    h2.metric(
+        "📅 Projected (90d / 3 months)",
+        f"R$ {total_90d:,.2f}",
+        help="Maximum horizon: 90 days (3 months of historical data used)",
+    )
+    h3.metric(
+        "🔍 Recommendations",
+        f"{len(recs)} opportunities",
+        help="Based on 7-day ML forecast × TOU load shifting",
+    )
+
+    st.markdown("---")
+
+    # ── Recommendation cards ──────────────────────────────────────────
+    for rec in recs:
+        conf_icon  = _CONFIDENCE_COLOR.get(rec.confidence, "⚪")
+        method_tag = "🤖 ML" if rec.method == "sklearn_hgb" else "📊 Baseline"
+        conf_help  = _CONFIDENCE_HELP.get(rec.confidence, "")
+
+        with st.container(border=True):
+            col_info, col_nums = st.columns([3, 1])
+
+            with col_info:
+                st.markdown(
+                    f"**#{rec.rank} — {rec.label}**  "
+                    f"{conf_icon} {rec.confidence.capitalize()} confidence · {method_tag}"
+                )
+                st.markdown(f"📌 **Action:** {rec.action}")
+                st.caption(
+                    f"Current pattern: {rec.current_window}  →  "
+                    f"Optimal: {rec.optimal_window}"
+                )
+                if rec.peak_kwh_predicted > 0:
+                    st.caption(
+                        f"Predicted in peak hours (18h–20h): **{rec.peak_kwh_predicted:.1f} kWh/week** · "
+                        f"mid-peak: **{rec.mid_kwh_predicted:.1f} kWh/week**"
+                    )
+
+            with col_nums:
+                st.metric("30-day savings",  f"R$ {rec.savings_30d_brl:,.2f}")
+                st.metric("90-day savings",  f"R$ {rec.savings_90d_brl:,.2f}")
+                st.caption(conf_help)
+
+    # ── Methodology note ──────────────────────────────────────────────
+    st.caption(
+        "**Methodology:** 7-day hourly forecast (ML or baseline) × "
+        "shiftable fraction per device × (TOU current rate − off-peak rate R$ 0.538/kWh). "
+        "Projected linearly to 30/90 days. "
+        "Actual savings depend on João's behavior change."
+    )
+
+
+# ── Solar Forecast Today ──────────────────────────────────────────────
+
+def render_solar_forecast_today(db_path: str) -> None:
+    """Full-width section: Open-Meteo irradiance → predicted solar kWh today,
+    overlaid with today's recorded generation from the DB.
+
+    Data sources are labelled explicitly so the API integration is visible
+    in the UI — not just in the logs.
+    """
+    weather = _load_weather()
+    data_source = weather.get("data_source", "synthetic")
+    hourly_wx = {h["hour"]: h for h in weather.get("hourly", [])}
+
+    # Open-Meteo irradiance → predicted kWh per hour for the full day
+    all_hours = list(range(24))
+    forecast_kwh = [
+        round(
+            (hourly_wx.get(h, {}).get("solar_irradiance", 0.0) / 1000.0)
+            * _PANEL_KWP * _PANEL_EFF,
+            3,
+        )
+        for h in all_hours
+    ]
+
+    # Today's recorded solar from DB (synthetic in demo mode)
+    df_solar = _load_solar(db_path, days=1)
+    today = datetime.now().date()
+    actual_by_hour: dict[int, float] = {}
+    if not df_solar.empty:
+        df_today = df_solar[df_solar["timestamp"].dt.date == today]
+        actual_by_hour = df_today.groupby("hour")["kwh"].sum().to_dict()
+
+    # ── Figure ────────────────────────────────────────────────────────
+    fig = go.Figure()
+
+    source_name = "Open-Meteo" if data_source == "open_meteo" else "Estimated (API unavailable)"
+    source_icon = "🌐" if data_source == "open_meteo" else "⚙️"
+
+    fig.add_trace(go.Scatter(
+        x=all_hours,
+        y=forecast_kwh,
+        name=f"Forecast · {source_name}",
+        mode="lines",
+        line=dict(color="#F39C12", width=2.5, dash="dash"),
+        fill="tozeroy",
+        fillcolor="rgba(243,156,18,0.10)",
+    ))
+
+    if actual_by_hour:
+        sorted_hours = sorted(actual_by_hour)
+        fig.add_trace(go.Scatter(
+            x=sorted_hours,
+            y=[actual_by_hour[h] for h in sorted_hours],
+            name="Recorded · DB (simulated)",
+            mode="lines+markers",
+            line=dict(color="#27AE60", width=2),
+            marker=dict(size=5),
+        ))
+
+    now_h = datetime.now().hour
+    fig.add_vline(
+        x=now_h,
+        line_width=1.5, line_dash="dot", line_color="#95A5A6",
+        annotation_text=f"Now ({now_h}h)",
+        annotation_position="top right",
+        annotation_font_size=11,
+    )
+
+    fig.update_layout(
+        title=(
+            f"Solar Forecast — Today   "
+            f"{source_icon} {source_name} · 4kWp · η = 85%"
+        ),
+        xaxis_title="Hour of day",
+        yaxis_title="kWh",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=10, r=20, t=70, b=40),
+        xaxis=dict(dtick=2, range=[0, 23], gridcolor="rgba(255,255,255,0.08)"),
+        yaxis=dict(gridcolor="rgba(255,255,255,0.08)", rangemode="nonnegative"),
+    )
+
+    # ── Summary metrics ───────────────────────────────────────────────
+    total_forecast = sum(forecast_kwh)
+    peak_h = forecast_kwh.index(max(forecast_kwh)) if any(v > 0 for v in forecast_kwh) else 12
+    current_irr = hourly_wx.get(now_h, {}).get("solar_irradiance", 0.0)
+    current_temp = hourly_wx.get(now_h, {}).get("temperature_c")
+    total_actual = sum(actual_by_hour.values()) if actual_by_hour else None
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric(
+        "☀️ Forecast Today", f"{total_forecast:.1f} kWh",
+        help="Irradiance → kWh = W/m² ÷ 1000 × 4kWp × 0.85",
+    )
+    m2.metric(
+        "⏰ Peak Generation", f"{peak_h}h",
+        help="Hour with highest predicted irradiance",
+    )
+    temp_label = f"{current_temp:.1f}°C · " if current_temp is not None else ""
+    m3.metric(
+        "📡 Irradiance Now", f"{current_irr:.0f} W/m²",
+        help=f"{temp_label}{source_name}",
+    )
+    if total_actual is not None:
+        m4.metric(
+            "🟢 Recorded So Far", f"{total_actual:.1f} kWh",
+            help="Accumulated kWh from DB today (synthetic in demo mode)",
+        )
+    else:
+        m4.metric("🟢 Recorded So Far", "—")
+
+    st.plotly_chart(fig, width="stretch")
+
+    # Provenance note — makes the API integration explicit to any reader
+    note = (
+        f"{source_icon} **Forecast:** {source_name} — irradiance (W/m²) → kWh via "
+        f"`W/m² ÷ 1000 × {_PANEL_KWP}kWp × {_PANEL_EFF}`"
+    )
+    if actual_by_hour:
+        note += (
+            "  ·  🗄️ **Recorded:** synthetic data (demo mode — "
+            "replace with inverter monitoring API in production)"
+        )
+    st.caption(note)
