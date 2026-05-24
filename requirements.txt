@@ -31,6 +31,7 @@ python-dotenv>=1.0.0
 # Data utilities
 pandas>=2.2.3
 numpy>=1.26.4
+scikit-learn>=1.4.0
 python-dateutil>=2.8.2
 
 # HTTP client (Open-Meteo API)

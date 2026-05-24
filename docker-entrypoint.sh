@@ -9,6 +9,13 @@ if [ ! -f "data/energy_data.db" ]; then
     echo "[entrypoint] Database ready."
 fi
 
+# ── Step 1b: Optional ML training (sklearn) ──────────────────────────
+if [ "${ENERGY_ADVISOR_TRAIN_ML_ON_START:-false}" = "true" ]; then
+    echo "[entrypoint] Training ML usage forecasters (ENERGY_ADVISOR_TRAIN_ML_ON_START=true)..."
+    python -m energy_advisor.bootstrap.ml_train
+    echo "[entrypoint] ML models ready."
+fi
+
 # ── Step 2: RAG vectorstore ───────────────────────────────────────────
 if [ ! -f "data/vectorstore/chroma.sqlite3" ]; then
     echo "[entrypoint] Building RAG vectorstore (requires OPENAI_API_KEY)..."
