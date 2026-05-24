@@ -115,17 +115,17 @@ For implementation rationale, see [`docs/mlops_implementation_notes.md`](docs/ml
 
 ---
 
-## Run the API (FastAPI + LangServe)
+## Run the API (FastAPI native)
 
 ```bash
 uv run uvicorn energy_advisor.api.app:app --reload --port 8000
 ```
 
 Open:
-- **http://localhost:8000/docs** (OpenAPI)
-- **http://localhost:8000/advisor/playground/** (LangServe playground)
+- **http://localhost:8000/docs** (OpenAPI / Swagger UI)
+- **http://localhost:8000/health** (health check)
 
-LangServe endpoints are exposed under `POST /advisor/invoke` and `POST /advisor/stream`.
+The native FastAPI endpoints are exposed under `POST /advisor/invoke` and `POST /advisor/stream`. There is no LangServe playground route in the current architecture.
 
 ---
 
