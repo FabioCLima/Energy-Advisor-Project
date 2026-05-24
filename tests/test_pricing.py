@@ -123,3 +123,18 @@ def test_pricing_uses_disk_cache_when_available(monkeypatch, tmp_path):
     assert result["bandeira_adicional_brl"] == pytest.approx(0.01234, abs=0.00001)
     assert result["data_source"] == "disk_cache"
     assert result["fallback_used"] is False
+
+
+def test_ssl_context_uses_certifi_bundle_by_default(monkeypatch):
+    called: dict[str, object] = {}
+
+    def fake_create_default_context(*, cafile=None):
+        called["cafile"] = cafile
+        return object()
+
+    monkeypatch.setattr(aneel_client.ssl, "create_default_context", fake_create_default_context)
+
+    ctx = aneel_client._make_ssl_context(allow_insecure_ssl=False)
+
+    assert ctx is not None
+    assert called["cafile"] == aneel_client.certifi.where()
