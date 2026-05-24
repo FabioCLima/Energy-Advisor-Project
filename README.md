@@ -8,7 +8,7 @@
 ![Coverage](https://img.shields.io/badge/Coverage-87%25-brightgreen?logo=pytest&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
-> AI-powered energy advisor for Brazilian households. Ask in natural language: *"Should I charge my Tesla now or wait for solar generation?"* The agent reasons over real consumption data, live weather, and ANEEL tariffs to give a grounded, quantified answer.
+> AI-powered energy advisor for Brazilian households. Ask in natural language: *"Should I charge my Tesla now or wait for solar generation?"* The agent reasons over real consumption data, live weather, and ANEEL energy rates to give a grounded, quantified answer.
 
 ![EcoHome Dashboard](assets/dashboard.png)
 
@@ -62,7 +62,7 @@ The LangGraph ReAct agent coordinates **8 specialized tools** and reasons over m
 |---|---|---|
 | `query_energy_usage` | SQLite (90 days, per-device) | "How much did my AC cost last week?" |
 | `query_solar_generation` | SQLite (hourly generation) | "When did my panel produce the most?" |
-| `get_electricity_prices` | ANEEL TOU + bandeira table | "What's the current tariff?" |
+| `get_electricity_prices` | ANEEL TOU + bandeira table | "What's the current energy rate?" |
 | `get_weather_forecast` | **Open-Meteo API** (real data) | "Will solar generate enough this afternoon?" |
 | `search_energy_tips` | ChromaDB RAG (5 documents) | "Best practices for EV charging?" |
 | `calculate_energy_savings` | Savings math engine | "How much would I save shifting to off-peak?" |
@@ -101,7 +101,7 @@ flowchart TD
         DB[("SQLite\n90 days · per-device")]
         VS[("ChromaDB\nRAG · 5 docs")]
         API["Open-Meteo API\nReal solar irradiance"]
-        ANEEL["ANEEL Tariff Table\nBRL · TOU · Bandeiras"]
+        ANEEL["ANEEL Energy Rate Table\nBRL · TOU · Bandeiras"]
     end
 
     User -->|question| UI
@@ -134,7 +134,7 @@ Six-layer design — each layer testable and replaceable independently:
 - **LangGraph over LCEL** — the ReAct loop (reason → call tool → reason again) is not linear. LangGraph represents it as an explicit state machine: each node is testable, each transition is auditable. When the agent fails, you see exactly which node, with which state.
 - **SQLite over PostgreSQL** — portability for demo. `DatabaseManager` uses SQLAlchemy; swap the connection string to move to Postgres with zero application code changes.
 - **Open-Meteo over synthetic weather** — free, no API key, provides `direct_radiation + diffuse_radiation` (W/m²) — the exact inputs needed for photovoltaic generation estimation. Falls back to deterministic synthetic data if unreachable.
-- **ANEEL bandeiras tarifárias** — the real Brazilian tariff system: Verde / Amarela / Vermelha 1 / Vermelha 2. A cost estimate that ignores bandeiras is wrong by up to 40%.
+- **ANEEL bandeiras tarifárias** — the official Brazilian rate-flag system: Verde / Amarela / Vermelha 1 / Vermelha 2. A cost estimate that ignores bandeiras is wrong by up to 40%.
 - **Aggregated tool output** — `query_energy_usage` returns per-device totals (~15 rows), not raw records (~2,000 rows). Sending raw records to an LLM produces hallucinated answers. The aggregation happens inside the tool, not in the prompt.
 
 ---
@@ -260,7 +260,7 @@ pytest tests/ -v
 |---|---|
 | Consumption by Device | Per-device kWh + % of total; EV shown separately (D1 fix) |
 | Solar vs Consumption | Hourly average kW; green area = surplus exported to grid |
-| Enel SP Tariffs | TOU rates by hour; vertical line = current time |
+| Enel SP Energy Rates | TOU rates by hour; vertical line = current time |
 | Home Office Cost | PC + Monitor + AC office; monthly and annual projections |
 
-The "Insight of the Day" card (top of dashboard) combines the current tariff period, real-time irradiance from Open-Meteo, and the cheapest upcoming window — all pre-computed, no agent call required.
+The "Insight of the Day" card (top of dashboard) combines the current energy rate period, real-time irradiance from Open-Meteo, and the cheapest upcoming window — all pre-computed, no agent call required.

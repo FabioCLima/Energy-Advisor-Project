@@ -40,7 +40,7 @@ HOME_OFFICE_DEVICES = frozenset({
     "AC Escritório Inverter 12k BTU",
 })
 
-_AVG_TARIFF_BRL = 0.656   # Enel SP mid-peak base rate used for solar savings estimate
+_AVG_RATE_BRL = 0.656   # Enel SP mid-peak base rate used for solar savings estimate
 
 
 # ── Data loaders (cached) ─────────────────────────────────────────────
@@ -119,7 +119,7 @@ def render_metrics(db_path: str, days: int = 30) -> None:
     self_suff = (solar_kwh / total_kwh * 100) if total_kwh > 0 else 0.0
 
     # K2/K3: solar savings and net grid cost
-    solar_savings = solar_kwh * _AVG_TARIFF_BRL
+    solar_savings = solar_kwh * _AVG_RATE_BRL
     net_cost = max(0.0, total_brl - solar_savings)
 
     row1 = st.columns(5)
@@ -130,7 +130,7 @@ def render_metrics(db_path: str, days: int = 30) -> None:
     row1[4].metric("🖥️ Home Office Cost",   f"R$ {office_brl:,.2f}",      help="PC + Monitor + AC office · from start of day, 30 days ago")
 
     row2 = st.columns(3)
-    row2[0].metric("☀️ Solar Savings",      f"R$ {solar_savings:,.2f}",   help=f"Solar × R$ {_AVG_TARIFF_BRL}/kWh")
+    row2[0].metric("☀️ Solar Savings",      f"R$ {solar_savings:,.2f}",   help=f"Solar × R$ {_AVG_RATE_BRL}/kWh")
     row2[1].metric("🔌 Net Grid Cost",      f"R$ {net_cost:,.2f}",        help="Gross cost − solar savings")
     row2[2].metric("📅 Period",             f"{days} days",               help="Adjust with the sidebar slider")
 
@@ -292,11 +292,11 @@ def chart_solar_vs_consumption(db_path: str, days: int = 30) -> go.Figure:
     return fig
 
 
-# ── Chart 3: TOU tariff rates (T1, T2) ───────────────────────────────
+# ── Chart 3: TOU energy rates (T1, T2) ───────────────────────────────
 
 def chart_tou_rates(date: str | None = None) -> go.Figure:
     """
-    Bar chart of hourly tariffs.
+    Bar chart of hourly energy rates.
     Shows label only on first bar of each period (T1).
     Adds vertical 'Now' line (T2).
     """
@@ -306,12 +306,12 @@ def chart_tou_rates(date: str | None = None) -> go.Figure:
     adicional = pricing["bandeira_adicional_brl"]
 
     hours   = [r["hour"]   for r in rates]
-    tariffs = [r["rate"]   for r in rates]
+    rate_values = [r["rate"]   for r in rates]
     periods = [r["period"] for r in rates]
 
     # T1: label only on first bar of each period group
     texts, seen = [], set()
-    for p, t in zip(periods, tariffs, strict=True):
+    for p, t in zip(periods, rate_values, strict=True):
         if p not in seen:
             texts.append(f"R${t:.3f}")
             seen.add(p)
@@ -320,7 +320,7 @@ def chart_tou_rates(date: str | None = None) -> go.Figure:
 
     fig = go.Figure(go.Bar(
         x=hours,
-        y=tariffs,
+        y=rate_values,
         text=texts,
         textposition="outside",
         marker_color=[
@@ -331,7 +331,7 @@ def chart_tou_rates(date: str | None = None) -> go.Figure:
         ],
         hovertext=[
             f"{_PERIOD_LABEL.get(p, p)}<br>R$ {t:.4f}/kWh"
-            for p, t in zip(periods, tariffs, strict=True)
+            for p, t in zip(periods, rate_values, strict=True)
         ],
         hoverinfo="text",
     ))
@@ -347,9 +347,9 @@ def chart_tou_rates(date: str | None = None) -> go.Figure:
 
     adicional_txt = f" (+R$ {adicional:.4f}/kWh surcharge)" if adicional > 0 else ""
     fig.update_layout(
-        title=f"Enel SP Tariffs — Bandeira {bandeira}{adicional_txt}",
+        title=f"Enel SP Energy Rates — Bandeira {bandeira}{adicional_txt}",
         xaxis=dict(title="Hour", tickmode="linear", dtick=1),
-        yaxis=dict(title="R$/kWh", range=[0, max(tariffs) * 1.30]),
+        yaxis=dict(title="R$/kWh", range=[0, max(rate_values) * 1.30]),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         height=340,
@@ -417,7 +417,7 @@ def chart_home_office_report(db_path: str, days: int = 30) -> tuple[go.Figure, d
 
 def render_daily_insight(db_path: str) -> None:
     """
-    Actionable insight card combining real-time tariff, current weather,
+    Actionable insight card combining current energy rate, current weather,
     and solar irradiance. Weather data from Open-Meteo (falls back to synthetic).
     """
     pricing = generate_time_of_use_prices()
@@ -462,7 +462,7 @@ def render_daily_insight(db_path: str) -> None:
         if solar_active:
             lines.append(f"☀️ Solar still generating ({irradiance:.0f} W/m²) — home office is partially offset.")
     elif period == "off_peak":
-        lines.append("✅ **Best time to charge the EV** and run heavy appliances (lowest tariff).")
+        lines.append("✅ **Best time to charge the EV** and run heavy appliances (lowest rate).")
         if solar_active:
             lines.append(f"🌤️ Some irradiance now ({irradiance:.0f} W/m²) — but off-peak rate beats waiting for solar.")
         else:
@@ -572,7 +572,7 @@ def render_bill_analysis(db_path: str, days: int = 30) -> None:
 
     st.plotly_chart(
         chart_bill_by_controllability(db_path, days),
-        use_container_width=True,
+        width="stretch",
     )
 
     # Summary metrics
