@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from energy_advisor import EnergyAdvisorAgent
 from energy_advisor.bootstrap.runtime import ensure_demo_assets
 from energy_advisor.config import Settings
+from energy_advisor.guardrails import GuardrailViolation
 
 
 class AdvisorRequest(BaseModel):
@@ -88,6 +89,8 @@ def invoke(req: AdvisorRequest) -> AdvisorResponse:
     try:
         agent = _get_agent()
         result = agent.invoke(req.question, context=req.context, config=_build_config(req))
+    except GuardrailViolation as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -117,6 +120,8 @@ def stream(req: AdvisorRequest) -> StreamingResponse:
             agent = _get_agent()
             for chunk in agent.stream(req.question, context=req.context, config=_build_config(req)):
                 yield f"data: {json.dumps({'text': chunk})}\n\n"
+        except GuardrailViolation as exc:
+            yield f"data: {json.dumps({'error': str(exc), 'status_code': 400})}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
         finally:
