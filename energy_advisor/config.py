@@ -50,6 +50,13 @@ class Settings(BaseSettings):
 
     # ── Observability ────────────────────────────────────────────────
     log_level: str = Field("INFO", alias="LOG_LEVEL")
+    observability_enabled: bool = Field(True, alias="ENERGY_ADVISOR_OBSERVABILITY_ENABLED")
+    observability_trace_path: str = Field(
+        "data/observability/agent_traces.jsonl",
+        alias="ENERGY_ADVISOR_OBSERVABILITY_TRACE_PATH",
+    )
+    max_request_cost_usd: float = Field(0.01, alias="ENERGY_ADVISOR_MAX_REQUEST_COST_USD")
+    max_request_latency_s: float = Field(20.0, alias="ENERGY_ADVISOR_MAX_REQUEST_LATENCY_S")
 
     # ── LangSmith tracing (optional) ────────────────────────────────
     langchain_api_key: str | None = Field(None, alias="LANGCHAIN_API_KEY")
