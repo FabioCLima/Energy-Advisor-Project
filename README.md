@@ -57,9 +57,9 @@ That makes it easy to explain a clean progression from demo surface to cloud-nat
 
 ## Product & MLOps Assessment
 
-This repository is a **standalone product demo**, not a claim of full enterprise production scale. The goal is to show the essential building blocks of an AI/ML product in the smallest credible scope: a usable dashboard, an API, a tool-using agent, model evaluation, observability, drift checks, guardrails, tests, Docker packaging and cloud deployment paths.
+This repository is a **deliberate product prototype** — scoped to demonstrate the essential building blocks of an AI/ML system without overengineering. The goal is to show the essential building blocks of an AI/ML product in the smallest credible scope: a usable dashboard, an API, a tool-using agent, model evaluation, observability, drift checks, guardrails, tests, Docker packaging and cloud deployment paths.
 
-That framing matters for recruiters and interviewers: the project demonstrates that the same engineering habits used in larger ML platforms can be applied deliberately in a compact prototype.
+That framing matters for recruiters and interviewers: the project demonstrates that the same engineering discipline found in larger ML platforms can be applied deliberately at prototype scale.
 
 | Capability | Standalone implementation in this repo | Production-scale evolution |
 |---|---|---|
@@ -79,11 +79,11 @@ This project sits deliberately at the intersection of both roles:
 - **MLE angle:** forecasting model, validation metrics, drift monitoring, model artifacts, evaluation harness and deployment discipline.
 - **AI Engineer angle:** LangGraph agent, tool calling, RAG-style retrieval, prompt/system design, LLM observability, guardrails and cost/latency control.
 
-The strongest interview positioning is not “this is only MLE” or “this is only AI Engineering”. The sharper story is: **I built an AI product prototype with MLE-grade evaluation and operational controls.**
+The story here is deliberate: **an AI product prototype with MLE-grade evaluation and production-oriented controls.**
 
 ### Observability with LangSmith
 
-LangSmith is optional in this project, but the agent already supports LangChain/LangGraph tracing environment variables. The hosted UI is https://smith.langchain.com and the default API endpoint is https://api.smith.langchain.com. To measure agent behavior in LangSmith, set:
+LangSmith is used for production debugging and evaluation review — the agent supports LangChain/LangGraph tracing environment variables, and when enabled, the evaluation harness captures traces automatically. The hosted UI is https://smith.langchain.com and the default API endpoint is https://api.smith.langchain.com. To measure agent behavior in LangSmith, set:
 
 ```bash
 export LANGCHAIN_TRACING_V2=true
@@ -152,7 +152,7 @@ The LangGraph ReAct agent coordinates **9 specialized tools** and reasons over m
 | `get_weather_forecast` | **Open-Meteo API** (real data) | "Will solar generate enough this afternoon?" |
 | `search_energy_tips` | ChromaDB RAG (5 documents) | "Best practices for EV charging?" |
 | `calculate_energy_savings` | Savings math engine | "How much would I save shifting to off-peak?" |
-| `get_recent_energy_summary` | SQLite aggregate | Context for open-ended questions |
+| `get_recent_energy_summary` | SQLite aggregate | "What's been my recent energy usage?" |
 | `predict_energy_usage` | SQLite + baseline/ML model artifact | "What will my usage look like tomorrow?" |
 | `optimize_energy_schedule` | Forecast router + pricing + heuristics | "What should I shift to save over the next 30 days?" |
 
@@ -220,12 +220,14 @@ Six-layer design — each layer testable and replaceable independently:
 | 5. Storage | SQLite + ChromaDB | Time-series + vector embeddings |
 | 6. Observability | Loguru + LangSmith | Structured logs + optional trace UI |
 
+The agent operates on a shared `AgentState` object that flows through the LangGraph graph. It carries: `messages` (the full conversation thread), `tool_calls` (the current round's requested tools), and user context injected by the system prompt. Each node reads from and writes to this state — making the graph's behavior fully inspectable at every step.
+
 **Key decisions:**
 
-- **LangGraph over LCEL** — the ReAct loop (reason → call tool → reason again) is not linear. LangGraph represents it as an explicit state machine: each node is testable, each transition is auditable. When the agent fails, you see exactly which node, with which state.
-- **SQLite over PostgreSQL** — portability for demo. `DatabaseManager` uses SQLAlchemy; swap the connection string to move to Postgres with zero application code changes.
+- **LangGraph over LCEL** — the ReAct loop (reason → call tool → reason again) is not linear. LangGraph represents it as an explicit state machine: each node is independently testable; each transition is auditable. When the agent fails, you see exactly which node, with which state.
+- **SQLite over PostgreSQL** — portability for demo. `DatabaseManager` uses SQLAlchemy; swap the connection string to migrate to PostgreSQL with no application code changes.
 - **Open-Meteo over synthetic weather** — free, no API key, provides `direct_radiation + diffuse_radiation` (W/m²) — the exact inputs needed for photovoltaic generation estimation. Falls back to deterministic synthetic data if unreachable.
-- **ANEEL energy rate provenance** — rate flags and distributor pricing are resolved through a provenance-aware service: in-memory cache → disk cache → external fetch (when enabled) → bundled fallback. The dashboard exposes `source`, `fetched_at`, and `fallback_used` instead of implying real-time freshness when the external source is unavailable.
+- **ANEEL energy rate provenance** — rate flags and distributor pricing are resolved through a provenance-aware service: in-memory cache → disk cache → external fetch (when enabled) → bundled fallback. The dashboard surfaces `source`, `fetched_at`, and `fallback_used` for full transparency.
 - **Aggregated tool output** — `query_energy_usage` returns per-device totals (~15 rows), not raw records (~2,000 rows). Sending raw records to an LLM produces hallucinated answers. The aggregation happens inside the tool, not in the prompt.
 
 ---
@@ -252,7 +254,7 @@ Device profiles use `prob_fn: Callable[[datetime], float]` encoding domain knowl
 
 The agent is evaluated in two independent dimensions:
 
-**Trajectory evaluation** — for each test scenario, the expected tool calls are defined. A scenario asking "quanto custou meu home office em abril?" must call `query_energy_usage` + `get_electricity_prices`. If the agent responds without those calls, it fails — even if the answer looks correct.
+**Trajectory evaluation** — each scenario in the harness defines the expected tool trajectory — the ordered sequence of tool calls the agent must make to produce a grounded answer. Responses that bypass tool calls fail automatically. A scenario asking "quanto custou meu home office em abril?" must call `query_energy_usage` + `get_electricity_prices`. If the agent responds without those calls, it fails — even if the answer looks correct.
 
 **LLM-as-judge** — a separate LLM scores the final response on four criteria with rubric:
 1. **Grounding** — numbers in the response are traceable to tool output
