@@ -42,6 +42,7 @@ class AgentTrace:
     tools_used: list[str]
     success: bool
     error: str | None = None
+    session_id: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
     estimated_cost_usd: float = 0.0
@@ -112,6 +113,7 @@ def build_agent_trace(
     max_cost_usd: float,
     max_latency_s: float,
     request_id: str | None = None,
+    session_id: str | None = None,
     error: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> AgentTrace:
@@ -126,6 +128,7 @@ def build_agent_trace(
         tools_used=extract_tool_calls(result or {}),
         success=error is None,
         error=error,
+        session_id=session_id,
         input_tokens=cost.input_tokens,
         output_tokens=cost.output_tokens,
         estimated_cost_usd=cost.estimated_cost_usd,

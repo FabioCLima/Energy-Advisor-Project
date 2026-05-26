@@ -64,3 +64,54 @@ def test_build_agent_trace_sets_budget_flags_without_langgraph_result() -> None:
     assert trace.error == "boom"
     assert trace.over_cost_budget is True
     assert trace.over_latency_budget is True
+
+
+# ── session_id tests (O-1) ────────────────────────────────────────────
+
+def test_build_agent_trace_stores_session_id() -> None:
+    trace = build_agent_trace(
+        question="test question",
+        result=None,
+        model="gpt-4o-mini",
+        latency_s=1.0,
+        max_cost_usd=0.01,
+        max_latency_s=20.0,
+        session_id="sess-abc-123",
+    )
+
+    assert trace.session_id == "sess-abc-123"
+
+
+def test_build_agent_trace_session_id_defaults_to_none() -> None:
+    trace = build_agent_trace(
+        question="test question",
+        result=None,
+        model="gpt-4o-mini",
+        latency_s=1.0,
+        max_cost_usd=0.01,
+        max_latency_s=20.0,
+    )
+
+    assert trace.session_id is None
+
+
+def test_trace_recorder_persists_session_id(tmp_path) -> None:
+    import json
+
+    trace_path = tmp_path / "traces.jsonl"
+    recorder = TraceRecorder(str(trace_path))
+    trace = AgentTrace(
+        request_id="req-2",
+        model="gpt-4o-mini",
+        question_chars=10,
+        answer_chars=20,
+        latency_s=0.5,
+        tools_used=[],
+        success=True,
+        session_id="sess-xyz-789",
+    )
+
+    recorder.record(trace)
+
+    payload = json.loads(trace_path.read_text(encoding="utf-8").strip())
+    assert payload["session_id"] == "sess-xyz-789"
