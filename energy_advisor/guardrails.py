@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from loguru import logger
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     """Violation severity used for proportional auditing and alerting."""
     LOW = "low"
     MEDIUM = "medium"
@@ -16,7 +16,7 @@ class Severity(str, Enum):
     CRITICAL = "critical"
 
 
-class GuardrailMode(str, Enum):
+class GuardrailMode(StrEnum):
     """Controls whether violations raise an exception or are only logged.
 
     AUDIT  — log the violation and continue (for monitoring / soft rollout).
