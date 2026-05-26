@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 
+from langchain_core.messages import AIMessage, ToolMessage
+
 from energy_advisor.observability import (
     AgentTrace,
+    ToolCallRecord,
     TraceRecorder,
     build_agent_trace,
     estimate_llm_cost,
     estimate_tokens,
+    extract_tool_call_details,
 )
 
 
@@ -115,3 +119,79 @@ def test_trace_recorder_persists_session_id(tmp_path) -> None:
 
     payload = json.loads(trace_path.read_text(encoding="utf-8").strip())
     assert payload["session_id"] == "sess-xyz-789"
+
+
+# ── Tool call detail tests (O-2) ──────────────────────────────────────
+
+def _make_langgraph_result() -> dict:
+    """Minimal LangGraph state with one tool call and its response."""
+    ai_msg = AIMessage(
+        content="",
+        tool_calls=[{"id": "call-1", "name": "query_energy_usage", "args": {"days": 30}}],
+    )
+    tool_msg = ToolMessage(
+        content='{"total_kwh": 120.5}',
+        tool_call_id="call-1",
+        name="query_energy_usage",
+    )
+    final_msg = AIMessage(content="Your usage was 120.5 kWh.")
+    return {"messages": [ai_msg, tool_msg, final_msg]}
+
+
+def test_extract_tool_call_details_returns_name_and_args() -> None:
+    result = _make_langgraph_result()
+    details = extract_tool_call_details(result)
+
+    assert len(details) == 1
+    assert details[0].name == "query_energy_usage"
+    assert details[0].args == {"days": 30}
+
+
+def test_extract_tool_call_details_captures_response_chars() -> None:
+    result = _make_langgraph_result()
+    details = extract_tool_call_details(result)
+
+    assert details[0].response_chars == len('{"total_kwh": 120.5}')
+
+
+def test_extract_tool_call_details_empty_on_no_tool_calls() -> None:
+    result = {"messages": [AIMessage(content="Just a direct answer.")]}
+    assert extract_tool_call_details(result) == []
+
+
+def test_build_agent_trace_populates_tool_calls_detail() -> None:
+    result = _make_langgraph_result()
+    trace = build_agent_trace(
+        question="How much did I use?",
+        result=result,
+        model="gpt-4o-mini",
+        latency_s=1.5,
+        max_cost_usd=0.01,
+        max_latency_s=20.0,
+    )
+
+    assert len(trace.tool_calls_detail) == 1
+    assert trace.tool_calls_detail[0].name == "query_energy_usage"
+    assert trace.tool_calls_detail[0].args == {"days": 30}
+
+
+def test_tool_calls_detail_serialised_to_jsonl(tmp_path) -> None:
+    result = _make_langgraph_result()
+    trace = build_agent_trace(
+        question="How much?",
+        result=result,
+        model="gpt-4o-mini",
+        latency_s=1.0,
+        max_cost_usd=0.01,
+        max_latency_s=20.0,
+        request_id="req-detail",
+    )
+    recorder = TraceRecorder(str(tmp_path / "t.jsonl"))
+    recorder.record(trace)
+
+    payload = json.loads((tmp_path / "t.jsonl").read_text())
+    detail = payload["tool_calls_detail"]
+    assert len(detail) == 1
+    assert detail[0]["name"] == "query_energy_usage"
+    assert detail[0]["args"] == {"days": 30}
+    assert detail[0]["response_chars"] == len('{"total_kwh": 120.5}')

@@ -13,12 +13,21 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
 
 _MODEL_PRICING_USD_PER_1K_TOKENS: dict[str, tuple[float, float]] = {
     "gpt-4o-mini": (0.00015, 0.00060),
     "gpt-4o": (0.00500, 0.01500),
 }
+
+
+@dataclass(frozen=True)
+class ToolCallRecord:
+    """One tool invocation captured from LangGraph message history."""
+
+    name: str
+    args: dict[str, Any]
+    response_chars: int
 
 
 @dataclass(frozen=True)
@@ -48,6 +57,7 @@ class AgentTrace:
     estimated_cost_usd: float = 0.0
     over_cost_budget: bool = False
     over_latency_budget: bool = False
+    tool_calls_detail: list[ToolCallRecord] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at_epoch_s: float = field(default_factory=time.time)
 
@@ -96,6 +106,32 @@ def extract_tool_calls(result: dict[str, Any]) -> list[str]:
     return called
 
 
+def extract_tool_call_details(result: dict[str, Any]) -> list[ToolCallRecord]:
+    """Return one ToolCallRecord per tool invocation, with args and response size.
+
+    Pairs each AIMessage.tool_calls entry with its ToolMessage response via
+    tool_call_id, so args and response_chars travel together in the trace.
+    """
+    messages = result.get("messages", [])
+
+    # Build map: tool_call_id → number of chars in the tool response
+    response_chars: dict[str, int] = {}
+    for msg in messages:
+        if isinstance(msg, ToolMessage):
+            response_chars[msg.tool_call_id] = len(str(msg.content))
+
+    records: list[ToolCallRecord] = []
+    for msg in messages:
+        if isinstance(msg, AIMessage) and msg.tool_calls:
+            for tc in msg.tool_calls:
+                records.append(ToolCallRecord(
+                    name=tc["name"],
+                    args=dict(tc.get("args") or {}),
+                    response_chars=response_chars.get(tc["id"], 0),
+                ))
+    return records
+
+
 def extract_final_answer(result: dict[str, Any]) -> str:
     """Return the final assistant answer from a LangGraph result."""
     for msg in reversed(result.get("messages", [])):
@@ -117,7 +153,8 @@ def build_agent_trace(
     error: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> AgentTrace:
-    final_answer = extract_final_answer(result or {})
+    resolved_result = result or {}
+    final_answer = extract_final_answer(resolved_result)
     cost = estimate_llm_cost(model, question, final_answer)
     return AgentTrace(
         request_id=request_id or new_request_id(),
@@ -125,7 +162,7 @@ def build_agent_trace(
         question_chars=len(question),
         answer_chars=len(final_answer),
         latency_s=round(latency_s, 4),
-        tools_used=extract_tool_calls(result or {}),
+        tools_used=extract_tool_calls(resolved_result),
         success=error is None,
         error=error,
         session_id=session_id,
@@ -134,5 +171,6 @@ def build_agent_trace(
         estimated_cost_usd=cost.estimated_cost_usd,
         over_cost_budget=cost.estimated_cost_usd > max_cost_usd,
         over_latency_budget=latency_s > max_latency_s,
+        tool_calls_detail=extract_tool_call_details(resolved_result),
         metadata=metadata or {},
     )
