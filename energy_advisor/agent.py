@@ -21,6 +21,7 @@ from langgraph.prebuilt import ToolNode
 from loguru import logger
 
 from .config import Settings
+from .contract import AgentContract
 from .guardrails import ensure_safe_model_output, ensure_safe_user_input
 from .logging import configure_logging
 from .observability import TraceRecorder, build_agent_trace, extract_final_answer, new_request_id
@@ -49,6 +50,7 @@ class EnergyAdvisorAgent:
         instructions: str = SYSTEM_INSTRUCTIONS,
         settings: Settings | None = None,
         model: str | None = None,
+        contract: AgentContract | None = None,
     ) -> None:
         # Load .env from repo root or ecohome_solution/
         try:
@@ -61,6 +63,7 @@ class EnergyAdvisorAgent:
             pass
 
         self.settings = settings or Settings()
+        self.contract = contract or AgentContract.from_settings(self.settings)
         configure_logging(self.settings.log_level)
         self._configure_langsmith()
 
@@ -147,7 +150,7 @@ class EnergyAdvisorAgent:
         request_id, session_id, metadata = self._observability_context(config)
         t0 = time.perf_counter()
         try:
-            ensure_safe_user_input(question, mode=self.settings.guardrail_mode)
+            ensure_safe_user_input(question, mode=self.contract.enforcement_mode)
             result = self.graph.invoke(
                 {"messages": self._build_messages(question, context)},
                 config=config,
@@ -167,7 +170,7 @@ class EnergyAdvisorAgent:
 
         elapsed = time.perf_counter() - t0
         try:
-            ensure_safe_model_output(extract_final_answer(result), mode=self.settings.guardrail_mode)
+            ensure_safe_model_output(extract_final_answer(result), mode=self.contract.enforcement_mode)
         except Exception as exc:
             self._record_trace(
                 question=question,
@@ -208,7 +211,7 @@ class EnergyAdvisorAgent:
         Yields:
             str: Individual text chunks of the final response.
         """
-        ensure_safe_user_input(question, mode=self.settings.guardrail_mode)
+        ensure_safe_user_input(question, mode=self.contract.enforcement_mode)
         self.last_tools_used: list[str] = []
         for chunk, metadata in self.graph.stream(  # type: ignore[misc]
             {"messages": self._build_messages(question, context)},
