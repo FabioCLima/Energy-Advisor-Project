@@ -6,7 +6,6 @@ from langchain_core.messages import AIMessage, ToolMessage
 
 from energy_advisor.observability import (
     AgentTrace,
-    ToolCallRecord,
     TraceRecorder,
     build_agent_trace,
     estimate_llm_cost,
