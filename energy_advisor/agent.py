@@ -144,7 +144,7 @@ class EnergyAdvisorAgent:
         Returns:
             The LangGraph state dict. Final answer is in result["messages"][-1].content.
         """
-        request_id, metadata = self._observability_context(config)
+        request_id, session_id, metadata = self._observability_context(config)
         t0 = time.perf_counter()
         try:
             ensure_safe_user_input(question, mode=self.settings.guardrail_mode)
@@ -159,6 +159,7 @@ class EnergyAdvisorAgent:
                 result=None,
                 latency_s=elapsed,
                 request_id=request_id,
+                session_id=session_id,
                 metadata=metadata,
                 error=str(exc),
             )
@@ -173,6 +174,7 @@ class EnergyAdvisorAgent:
                 result=result,
                 latency_s=elapsed,
                 request_id=request_id,
+                session_id=session_id,
                 metadata=metadata,
                 error=str(exc),
             )
@@ -182,6 +184,7 @@ class EnergyAdvisorAgent:
             result=result,
             latency_s=elapsed,
             request_id=request_id,
+            session_id=session_id,
             metadata=metadata,
         )
         return result
@@ -223,15 +226,18 @@ class EnergyAdvisorAgent:
                 if chunk.name not in self.last_tools_used:
                     self.last_tools_used.append(chunk.name)
 
-    def _observability_context(self, config: RunnableConfig | None) -> tuple[str, dict[str, Any]]:
+    def _observability_context(
+        self, config: RunnableConfig | None
+    ) -> tuple[str, str | None, dict[str, Any]]:
         metadata: dict[str, Any] = {}
         if isinstance(config, dict):
             raw_metadata = config.get("metadata") or {}
             if isinstance(raw_metadata, dict):
                 metadata.update(raw_metadata)
         request_id = str(metadata.get("request_id") or new_request_id())
+        session_id = metadata.get("session_id") or None
         metadata.setdefault("request_id", request_id)
-        return request_id, metadata
+        return request_id, session_id, metadata
 
     def _record_trace(
         self,
@@ -240,6 +246,7 @@ class EnergyAdvisorAgent:
         result: dict[str, Any] | None,
         latency_s: float,
         request_id: str,
+        session_id: str | None = None,
         metadata: dict[str, Any],
         error: str | None = None,
     ) -> None:
@@ -253,6 +260,7 @@ class EnergyAdvisorAgent:
             max_cost_usd=self.settings.max_request_cost_usd,
             max_latency_s=self.settings.max_request_latency_s,
             request_id=request_id,
+            session_id=session_id,
             error=error,
             metadata=metadata,
         )

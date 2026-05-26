@@ -4,7 +4,10 @@ Manages message history and agent invocation via Streamlit session state.
 """
 from __future__ import annotations
 
+import uuid
+
 import streamlit as st
+from langchain_core.runnables import RunnableConfig
 
 _SUGGESTED_QUESTIONS = [
     "Quanto gastei com home office nos últimos 30 dias?",
@@ -19,6 +22,8 @@ def _init_state() -> None:
         st.session_state.messages = []
     if "agent" not in st.session_state:
         st.session_state.agent = None
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
 
 
 def _load_agent() -> object | None:
@@ -89,7 +94,12 @@ def _handle_question(question: str, agent: object | None) -> None:
             try:
                 # st.write_stream consumes the generator and renders tokens as they arrive.
                 # Tool names accumulate in agent.last_tools_used as a side effect.
-                answer = st.write_stream(agent.stream(question))
+                answer = st.write_stream(
+                    agent.stream(
+                        question,
+                        config=RunnableConfig(metadata={"session_id": st.session_state.session_id}),
+                    )
+                )
                 tools = getattr(agent, "last_tools_used", [])
             except Exception as e:
                 answer = f"❌ Agent error: {e}"
