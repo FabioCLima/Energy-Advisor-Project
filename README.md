@@ -4,8 +4,8 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-ReAct_Agent-6B48FF?logo=chainlink&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?logo=streamlit&logoColor=white)
 ![Open-Meteo](https://img.shields.io/badge/Open--Meteo-Real_Weather-4CAF50?logo=cloudflarepages&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-102_passed-brightgreen?logo=pytest&logoColor=white)
-![Coverage](https://img.shields.io/badge/Coverage-87%25-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-140_passed-brightgreen?logo=pytest&logoColor=white)
+![Coverage](https://img.shields.io/badge/Coverage-81%25-brightgreen?logo=pytest&logoColor=white)
 ![CI](https://github.com/FabioCLima/Energy-Advisor-Project/actions/workflows/ci.yml/badge.svg?branch=master)
 ![Docker](https://img.shields.io/badge/GHCR-ghcr.io%2Ffabiolima%2Fenergy--advisor-2496ED?logo=docker&logoColor=white)
 
@@ -66,10 +66,10 @@ That framing matters for recruiters and interviewers: the project demonstrates t
 | Product surface | Streamlit dashboard + chat | Dedicated frontend, auth, user accounts |
 | Agent service | FastAPI + LangGraph ReAct agent | Multi-tenant API, rate limits, service mesh |
 | Model/agent evaluation | Scenario harness, tool trajectory checks, optional LLM-as-judge | CI quality gates, larger benchmark sets, human review workflows |
-| Observability | Local JSONL traces with tools, latency, estimated tokens/cost | LangSmith/OpenTelemetry traces, Prometheus/Grafana, CloudWatch alarms |
+| Observability | Local JSONL traces with tools, latency, tokens/cost, session_id correlation, and per-tool-call args + response size | LangSmith/OpenTelemetry traces, Prometheus/Grafana, CloudWatch alarms |
 | Cost control | Per-request estimated cost and budget flags | Budget enforcement, model routing, cache policy, org-level cost dashboards |
 | Drift monitoring | Offline baseline vs current window checks for energy data and forecast error | Scheduled Evidently/MLflow jobs, retraining triggers, model registry governance |
-| Guardrails | Deterministic prompt-injection and secret-leak checks | Policy engine, PII detection, red-team suites, audit logs |
+| Guardrails | Severity-tiered checks (low→critical): prompt injection, secret leakage, Brazilian PII/LGPD (CPF, CNPJ, phone, e-mail); AUDIT/BLOCK mode configurable via env var | Policy engine, red-team suites, audit logs |
 | Deployment | Docker, Streamlit Cloud path, AWS App Runner path | IaC, blue/green deploys, autoscaling, secrets manager, VPC controls |
 
 ### How MLE and AI Engineer converge here
@@ -277,8 +277,12 @@ Lowest-scoring scenarios from the judged run:
 Run the evaluation pipeline:
 
 ```bash
-python -m energy_advisor.evaluation.runner --output eval_report.json
-# Add --quick for 4 scenarios only; --no-judge to skip LLM scoring
+python -m energy_advisor.evaluation.runner
+# Output: eval_report_YYYYMMDD_HHMMSS.json (timestamped by default)
+# Summary appended to data/observability/eval_history.jsonl after each run
+# --output path/to/report.json  override the output path
+# --quick                       run 4 scenarios instead of all 12
+# --no-judge                    skip LLM scoring (trajectory only)
 ```
 
 ---
@@ -311,7 +315,7 @@ Known limitation: the model forecasts recursively, so error accumulates with lon
 | Dashboard | Streamlit + Plotly |
 | Logging | Loguru (structured) + LangSmith (optional tracing) |
 | Container | Docker + Docker Compose · single image with `streamlit` / `api` runtime modes |
-| Tests | pytest · 102 tests · 87% coverage on core |
+| Tests | pytest · 140 tests · 81% coverage |
 | Linting | Ruff |
 
 ---
@@ -327,10 +331,14 @@ Energy-Advisor-Project/
 │       └── chat.py               ← Chat tab + agent calls
 ├── energy_advisor/
 │   ├── agent.py                  ← LangGraph ReAct graph
-│   ├── config.py                 ← Pydantic-settings (env vars)
+│   ├── config.py                 ← Pydantic-settings (env vars + guardrail mode)
+│   ├── contract.py               ← AgentContract (scope, topics, enforcement policy)
+│   ├── guardrails.py             ← Severity tiering, PII/LGPD, AUDIT/BLOCK mode
+│   ├── observability.py          ← AgentTrace (session_id, tool call args, costs)
 │   ├── schemas.py                ← Pydantic v2 I/O schemas
 │   ├── prompts.py                ← System prompt with João's context
 │   ├── tools/                    ← 9 @tool decorated functions
+│   ├── evaluation/               ← Scenario harness, LLM-as-judge, eval_history
 │   └── services/
 │       ├── database.py           ← SQLAlchemy models + DB manager
 │       ├── aneel_client.py       ← Provenance-aware ANEEL cache/fallback client
@@ -341,7 +349,7 @@ Energy-Advisor-Project/
 │       ├── recommendations.py    ← Savings calculation engine
 │       ├── retrieval.py          ← ChromaDB RAG pipeline
 │       └── usage_forecasting_ml.py ← HistGradientBoostingRegressor + evaluation
-├── tests/                        ← 85 unit tests (87% coverage)
+├── tests/                        ← 140 unit tests (81% coverage)
 ├── data/
 │   ├── documents/                ← RAG knowledge base (5 docs)
 │   ├── energy_data.db            ← SQLite (generated on first run)
