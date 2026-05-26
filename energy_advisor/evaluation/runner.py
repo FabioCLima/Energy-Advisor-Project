@@ -11,6 +11,7 @@ import argparse
 import json
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import AIMessage
@@ -198,13 +199,43 @@ def compute_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
     return summary
 
 
+# ── Helpers ───────────────────────────────────────────────────────────
+
+def _default_output_path() -> str:
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"eval_report_{ts}.json"
+
+
+def _append_eval_history(
+    summary: dict[str, Any],
+    report: dict[str, Any],
+    report_file: str,
+    history_path: str,
+) -> None:
+    entry = {
+        "generated_at": report["generated_at"],
+        "model": report["model"],
+        "quick_mode": report["quick_mode"],
+        "total_scenarios": summary["total_scenarios"],
+        "trajectory_pass_rate": summary["trajectory_pass_rate"],
+        "avg_judge_overall": summary.get("avg_judge_overall"),
+        "report_file": report_file,
+    }
+    path = Path(history_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
 # ── Main runner ───────────────────────────────────────────────────────
 
 def run_evaluation(
-    output_path: str,
+    output_path: str | None = None,
     use_judge: bool = True,
     quick: bool = False,
+    eval_history_path: str = "data/observability/eval_history.jsonl",
 ) -> dict[str, Any]:
+    resolved_path = output_path or _default_output_path()
     settings = Settings()
     agent = EnergyAdvisorAgent(settings=settings)
     scenarios = QUICK_SCENARIOS if quick else ALL_SCENARIOS
@@ -221,19 +252,23 @@ def run_evaluation(
         for s in scenarios
     ]
 
+    summary = compute_summary(results)
     report: dict[str, Any] = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "model":        settings.selected_model(),
         "judge_model":  settings.model_quality if use_judge else None,
         "quick_mode":   quick,
-        "summary":      compute_summary(results),
+        "summary":      summary,
         "scenarios":    results,
     }
 
-    with open(output_path, "w", encoding="utf-8") as f:
+    with open(resolved_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
 
-    logger.success("Report saved → {}", output_path)
+    _append_eval_history(summary, report, resolved_path, eval_history_path)
+
+    logger.success("Report saved → {}", resolved_path)
+    logger.success("History updated → {}", eval_history_path)
     return report
 
 
@@ -274,7 +309,10 @@ def _print_summary(report: dict[str, Any]) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run EcoHome agent evaluation pipeline.")
-    parser.add_argument("--output", default="eval_report.json", help="Path to output JSON report")
+    parser.add_argument(
+        "--output", default=None,
+        help="Path to output JSON report (default: eval_report_YYYYMMDD_HHMMSS.json)",
+    )
     parser.add_argument("--no-judge", action="store_true", help="Skip LLM-as-judge (trajectory only)")
     parser.add_argument("--quick", action="store_true", help="Run 4 scenarios instead of all 12")
     args = parser.parse_args()
