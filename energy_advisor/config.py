@@ -5,6 +5,8 @@ import os
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .guardrails import GuardrailMode
+
 
 class Settings(BaseSettings):
     """Centralized runtime configuration backed by environment variables.
@@ -48,6 +50,9 @@ class Settings(BaseSettings):
     # ── Forecasting / ML ─────────────────────────────────────────────
     usage_forecast_mode: str = Field("auto", alias="ENERGY_ADVISOR_USAGE_FORECAST_MODE")
     bootstrap_vectorstore: bool = Field(False, alias="ENERGY_ADVISOR_BOOTSTRAP_VECTORSTORE")
+
+    # ── Guardrails ───────────────────────────────────────────────────
+    guardrail_mode: GuardrailMode = Field(GuardrailMode.BLOCK, alias="ENERGY_ADVISOR_GUARDRAIL_MODE")
 
     # ── Observability ────────────────────────────────────────────────
     log_level: str = Field("INFO", alias="LOG_LEVEL")

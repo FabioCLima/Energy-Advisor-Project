@@ -147,7 +147,7 @@ class EnergyAdvisorAgent:
         request_id, metadata = self._observability_context(config)
         t0 = time.perf_counter()
         try:
-            ensure_safe_user_input(question)
+            ensure_safe_user_input(question, mode=self.settings.guardrail_mode)
             result = self.graph.invoke(
                 {"messages": self._build_messages(question, context)},
                 config=config,
@@ -166,7 +166,7 @@ class EnergyAdvisorAgent:
 
         elapsed = time.perf_counter() - t0
         try:
-            ensure_safe_model_output(extract_final_answer(result))
+            ensure_safe_model_output(extract_final_answer(result), mode=self.settings.guardrail_mode)
         except Exception as exc:
             self._record_trace(
                 question=question,
@@ -205,7 +205,7 @@ class EnergyAdvisorAgent:
         Yields:
             str: Individual text chunks of the final response.
         """
-        ensure_safe_user_input(question)
+        ensure_safe_user_input(question, mode=self.settings.guardrail_mode)
         self.last_tools_used: list[str] = []
         for chunk, metadata in self.graph.stream(  # type: ignore[misc]
             {"messages": self._build_messages(question, context)},

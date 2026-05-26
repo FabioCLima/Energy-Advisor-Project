@@ -5,6 +5,8 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
+from loguru import logger
+
 
 class Severity(str, Enum):
     """Violation severity used for proportional auditing and alerting."""
@@ -12,6 +14,16 @@ class Severity(str, Enum):
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
+
+
+class GuardrailMode(str, Enum):
+    """Controls whether violations raise an exception or are only logged.
+
+    AUDIT  — log the violation and continue (for monitoring / soft rollout).
+    BLOCK  — raise GuardrailViolation and abort the request (default).
+    """
+    AUDIT = "audit"
+    BLOCK = "block"
 
 
 class GuardrailViolation(ValueError):
@@ -75,13 +87,34 @@ def validate_model_output(answer: str) -> GuardrailResult:
     return GuardrailResult(True)
 
 
-def ensure_safe_user_input(question: str, *, max_chars: int = 2000) -> None:
+def ensure_safe_user_input(
+    question: str,
+    *,
+    max_chars: int = 2000,
+    mode: GuardrailMode = GuardrailMode.BLOCK,
+) -> GuardrailResult:
     result = validate_user_input(question, max_chars=max_chars)
     if not result.passed:
-        raise GuardrailViolation(result.reason or "Unsafe input rejected.")
+        _handle_violation(result, mode, context="input")
+    elif result.severity:
+        logger.info("Guardrail audit [{}] {}", result.severity, result.reason)
+    return result
 
 
-def ensure_safe_model_output(answer: str) -> None:
+def ensure_safe_model_output(
+    answer: str,
+    *,
+    mode: GuardrailMode = GuardrailMode.BLOCK,
+) -> GuardrailResult:
     result = validate_model_output(answer)
     if not result.passed:
-        raise GuardrailViolation(result.reason or "Unsafe output rejected.")
+        _handle_violation(result, mode, context="output")
+    return result
+
+
+def _handle_violation(result: GuardrailResult, mode: GuardrailMode, context: str) -> None:
+    msg = f"Guardrail [{context}] [{result.severity}] {result.reason}"
+    if mode == GuardrailMode.AUDIT:
+        logger.warning("AUDIT — {}", msg)
+    else:
+        raise GuardrailViolation(result.reason or f"Unsafe {context} rejected.")
