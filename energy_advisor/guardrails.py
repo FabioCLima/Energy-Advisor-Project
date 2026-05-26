@@ -3,6 +3,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from enum import Enum
+
+
+class Severity(str, Enum):
+    """Violation severity used for proportional auditing and alerting."""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
 
 
 class GuardrailViolation(ValueError):
@@ -13,6 +22,7 @@ class GuardrailViolation(ValueError):
 class GuardrailResult:
     passed: bool
     reason: str | None = None
+    severity: Severity | None = None
 
 
 _INJECTION_PATTERNS = (
@@ -32,19 +42,19 @@ _SECRET_PATTERNS = (
 def validate_user_input(question: str, *, max_chars: int = 2000) -> GuardrailResult:
     cleaned = (question or "").strip()
     if not cleaned:
-        return GuardrailResult(False, "Question cannot be empty.")
+        return GuardrailResult(False, "Question cannot be empty.", Severity.LOW)
     if len(cleaned) > max_chars:
-        return GuardrailResult(False, f"Question exceeds the {max_chars} character limit.")
+        return GuardrailResult(False, f"Question exceeds the {max_chars} character limit.", Severity.LOW)
     for pattern in _INJECTION_PATTERNS:
         if pattern.search(cleaned):
-            return GuardrailResult(False, "Request looks like prompt injection or secret exfiltration.")
+            return GuardrailResult(False, "Request looks like prompt injection or secret exfiltration.", Severity.CRITICAL)
     return GuardrailResult(True)
 
 
 def validate_model_output(answer: str) -> GuardrailResult:
     for pattern in _SECRET_PATTERNS:
         if pattern.search(answer or ""):
-            return GuardrailResult(False, "Response appears to contain a secret or credential.")
+            return GuardrailResult(False, "Response appears to contain a secret or credential.", Severity.CRITICAL)
     return GuardrailResult(True)
 
 
