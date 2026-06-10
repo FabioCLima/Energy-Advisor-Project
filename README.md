@@ -4,7 +4,7 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-ReAct_Agent-6B48FF?logo=chainlink&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?logo=streamlit&logoColor=white)
 ![Open-Meteo](https://img.shields.io/badge/Open--Meteo-Real_Weather-4CAF50?logo=cloudflarepages&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-181_passed-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-205_passed-brightgreen?logo=pytest&logoColor=white)
 ![Coverage](https://img.shields.io/badge/Coverage-81%25-brightgreen?logo=pytest&logoColor=white)
 ![CI](https://github.com/FabioCLima/Energy-Advisor-Project/actions/workflows/ci.yml/badge.svg?branch=master)
 ![Docker](https://img.shields.io/badge/GHCR-ghcr.io%2Ffabiolima%2Fenergy--advisor-2496ED?logo=docker&logoColor=white)
@@ -69,7 +69,7 @@ That framing matters for recruiters and interviewers: the project demonstrates t
 | Observability | Local JSONL traces with tools, latency, tokens/cost, session_id correlation, and per-tool-call args + response size — recorded on both `invoke` and `stream` paths | LangSmith/OpenTelemetry traces, Prometheus/Grafana, CloudWatch alarms |
 | Cost control | Real token counts from provider `usage_metadata` (covering every ReAct iteration), with labelled chars/4 heuristic fallback (`cost_source` field); budget enforcement with AUDIT/BLOCK rollout (`ENERGY_ADVISOR_BUDGET_MODE` — BLOCK interrupts the loop mid-run, API returns 429) | Model routing, cache policy, org-level cost dashboards |
 | Drift monitoring | Offline baseline vs current window checks for energy data and forecast error | Scheduled Evidently/MLflow jobs, retraining triggers, model registry governance |
-| Guardrails | Severity-tiered checks (low→critical): prompt injection, secret leakage, Brazilian PII/LGPD (CPF, CNPJ, phone, e-mail); AUDIT/BLOCK mode configurable via env var; output validation applied to **both** `invoke` and token streaming (incremental check per chunk) | Policy engine, red-team suites, audit logs |
+| Guardrails | Severity-tiered checks (low→critical): bilingual (EN + PT-BR) prompt-injection patterns, secret leakage, Brazilian PII/LGPD (CPF, CNPJ, phone, e-mail); AUDIT/BLOCK mode configurable via env var; output validation applied to **both** `invoke` and token streaming (incremental check per chunk) | Classifier/moderation-based detection, policy engine, red-team suites |
 | Deployment | Docker, Streamlit Cloud path, AWS App Runner path | IaC, blue/green deploys, autoscaling, secrets manager, VPC controls |
 
 ### How MLE and AI Engineer converge here
@@ -239,12 +239,14 @@ The agent operates on a shared `AgentState` object that flows through the LangGr
 - **Open-Meteo over synthetic weather** — free, no API key, provides `direct_radiation + diffuse_radiation` (W/m²) — the exact inputs needed for photovoltaic generation estimation. Falls back to deterministic synthetic data if unreachable.
 - **ANEEL energy rate provenance** — rate flags and distributor pricing are resolved through a provenance-aware service: in-memory cache → disk cache → external fetch (when enabled) → bundled fallback. The dashboard surfaces `source`, `fetched_at`, and `fallback_used` for full transparency.
 - **Aggregated tool output** — `query_energy_usage` returns per-device totals (~15 rows), not raw records (~2,000 rows). Sending raw records to an LLM produces hallucinated answers. The aggregation happens inside the tool, not in the prompt.
+- **No prices in the prompt** — the system prompt names the tariff windows but never quotes R$/kWh values; the model must call `get_electricity_prices`. A prompt that both forbids fabricating prices and contains prices is a contradiction that diverges silently (guarded by `tests/test_prompts.py`).
+- **Conversation memory via checkpointer** — requests carrying a `session_id` reuse a LangGraph thread (`MemorySaver`), so follow-ups keep context; requests without one stay single-turn. Per-process memory; the documented evolution is a persistent checkpointer (SqliteSaver/PostgresSaver).
 
 ---
 
 ## Persona: João
 
-All sample data is generated for a realistic Brazilian household:
+João is the **default `UserProfile`** (`energy_advisor/profile.py`), rendered into the system prompt by `render_instructions()` — supporting another household means defining another profile, not rewriting the prompt. All sample data is generated for a realistic Brazilian household:
 
 | Attribute | Value |
 |---|---|
@@ -329,7 +331,7 @@ Known limitation: the model forecasts recursively, so error accumulates with lon
 | Dashboard | Streamlit + Plotly |
 | Logging | Loguru (structured) + LangSmith (optional tracing) |
 | Container | Docker + Docker Compose · single image with `streamlit` / `api` runtime modes |
-| Tests | pytest · 181 tests · 81% coverage (incl. agent graph tests with injected fake model — no API key needed) |
+| Tests | pytest · 205 tests · 81% coverage (incl. agent graph tests with injected fake model — no API key needed) |
 | Linting | Ruff |
 
 ---
@@ -350,7 +352,8 @@ Energy-Advisor-Project/
 │   ├── guardrails.py             ← Severity tiering, PII/LGPD, AUDIT/BLOCK mode
 │   ├── observability.py          ← AgentTrace (session_id, tool call args, costs)
 │   ├── schemas.py                ← Pydantic v2 I/O schemas
-│   ├── prompts.py                ← System prompt with João's context
+│   ├── profile.py                ← UserProfile (João is the default, swappable)
+│   ├── prompts.py                ← System prompt template rendered from UserProfile
 │   ├── tools/                    ← 9 @tool decorated functions
 │   ├── evaluation/               ← Scenario harness, LLM-as-judge, eval_history
 │   └── services/
@@ -363,11 +366,12 @@ Energy-Advisor-Project/
 │       ├── recommendations.py    ← Savings calculation engine
 │       ├── retrieval.py          ← ChromaDB RAG pipeline
 │       └── usage_forecasting_ml.py ← HistGradientBoostingRegressor + evaluation
-├── tests/                        ← 181 unit tests (81% coverage)
+├── tests/                        ← 205 unit tests (81% coverage)
 ├── data/
 │   ├── documents/                ← RAG knowledge base (5 docs)
 │   ├── energy_data.db            ← SQLite (generated on first run)
 │   └── vectorstore/              ← ChromaDB index (generated)
+├── migrations/                   ← Alembic schema migrations (baseline)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── docker-entrypoint.sh

@@ -17,6 +17,7 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
@@ -157,7 +158,12 @@ class EnergyAdvisorAgent:
         builder.add_conditional_edges("assistant", route_after_assistant)
         builder.add_edge("tools", "assistant")
 
-        self.graph = builder.compile()
+        # In-memory checkpointer: conversation state per thread_id. A request
+        # with session_id reuses its thread (multi-turn); without one, each
+        # request gets a fresh thread keyed by request_id (single-turn, as
+        # before). Per-process only — a multi-replica deployment would use a
+        # persistent checkpointer (e.g. SqliteSaver/PostgresSaver).
+        self.graph = builder.compile(checkpointer=MemorySaver())
 
     def _build_messages(self, question: str, context: str | None) -> list[BaseMessage]:
         now = datetime.now()
@@ -208,6 +214,36 @@ class EnergyAdvisorAgent:
         merged.setdefault("recursion_limit", 2 * self.settings.max_agent_iterations + 1)
         return merged
 
+    def _thread_input_and_config(
+        self,
+        question: str,
+        context: str | None,
+        config: RunnableConfig | None,
+        *,
+        request_id: str,
+        session_id: str | None,
+    ) -> tuple[dict[str, Any], RunnableConfig]:
+        """Resolve checkpointer thread and graph input for this turn.
+
+        First turn of a thread gets the full system context; follow-up turns
+        send only the new question — the checkpointer already holds the history.
+        """
+        cfg = self._runtime_config(config)
+        configurable = dict(cfg.get("configurable") or {})
+        configurable.setdefault("thread_id", session_id or request_id)
+        cfg["configurable"] = configurable
+
+        existing = self.graph.get_state(cfg)
+        has_history = bool(existing and existing.values.get("messages"))
+        if has_history:
+            messages: list[BaseMessage] = []
+            if context:
+                messages.append(SystemMessage(content=context))
+            messages.append(HumanMessage(content=question))
+        else:
+            messages = self._build_messages(question, context)
+        return {"messages": messages}, cfg
+
     def invoke(
         self,
         question: str,
@@ -223,10 +259,10 @@ class EnergyAdvisorAgent:
         t0 = time.perf_counter()
         try:
             ensure_safe_user_input(question, mode=self.contract.enforcement_mode)
-            result = self.graph.invoke(
-                {"messages": self._build_messages(question, context)},
-                config=self._runtime_config(config),
+            graph_input, cfg = self._thread_input_and_config(
+                question, context, config, request_id=request_id, session_id=session_id
             )
+            result = self.graph.invoke(graph_input, config=cfg)
         except GraphRecursionError:
             elapsed = time.perf_counter() - t0
             logger.warning(
@@ -335,10 +371,13 @@ class EnergyAdvisorAgent:
                 return
             raise GuardrailViolation(check.reason or "Unsafe output rejected.")
 
+        graph_input, cfg = self._thread_input_and_config(
+            question, context, config, request_id=request_id, session_id=session_id
+        )
         try:
             for mode, payload in self.graph.stream(  # type: ignore[misc]
-                {"messages": self._build_messages(question, context)},
-                config=self._runtime_config(config),
+                graph_input,
+                config=cfg,
                 stream_mode=["messages", "values"],
             ):
                 if mode == "values":

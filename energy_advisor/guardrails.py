@@ -1,4 +1,15 @@
-"""Deterministic safety guardrails for the EcoHome assistant."""
+"""Deterministic safety guardrails for the EcoHome assistant.
+
+Design note — why regex, and what regex cannot do:
+These checks are deterministic, zero-latency and zero-cost, which makes them
+testable and always-on. They are also structurally weak: pattern matching
+catches known phrasings, not intent — paraphrases, encodings and novel
+languages slip through. That is acceptable here because they are the *first*
+layer, not the only one (scope-limited prompt, tool whitelist, output checks).
+The production evolution is a dedicated classifier or moderation endpoint;
+patterns below cover EN + PT-BR because the product's users speak Portuguese —
+an English-only injection filter on a Brazilian product is a fake control.
+"""
 from __future__ import annotations
 
 import re
@@ -38,10 +49,32 @@ class GuardrailResult:
 
 
 _INJECTION_PATTERNS = (
+    # English
     re.compile(r"ignore (all )?(previous|prior|system) instructions", re.IGNORECASE),
     re.compile(r"reveal (the )?(system prompt|developer message|hidden instructions)", re.IGNORECASE),
     re.compile(r"print (the )?(env|environment variables|secrets|api key)", re.IGNORECASE),
     re.compile(r"bypass (safety|guardrails|policy)", re.IGNORECASE),
+    # Portuguese (BR)
+    re.compile(
+        r"(ignore|esque[çc]a|desconsidere) (todas? )?(as )?"
+        r"(instru[çc][õo]es|regras|comandos) (anteriores|pr[ée]vias?|do sistema)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(revele|mostre|exiba|imprima) (o |a |as |os )?"
+        r"(prompt do sistema|instru[çc][õo]es ocultas|mensagem do desenvolvedor|system prompt)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(imprima|mostre|exiba|revele) (a |o |as |os )?"
+        r"(vari[áa]veis de ambiente|segredos|chave[s]? (de )?api|credenciais)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(burle|contorne|desative|ignore) (a |as |os )?"
+        r"(seguran[çc]a|guardrails?|pol[íi]ticas?|prote[çc][õo]es)",
+        re.IGNORECASE,
+    ),
 )
 
 _SECRET_PATTERNS = (

@@ -267,6 +267,51 @@ def test_stream_audit_mode_logs_but_does_not_block(agent_settings, trace_path, m
     assert read_traces(trace_path)[0]["success"] is True
 
 
+# ── C-2: conversation memory (checkpointer) ───────────────────────────
+
+def test_same_session_id_keeps_conversation_history(agent_settings) -> None:
+    agent = make_agent(
+        [AIMessage(content="First answer."), AIMessage(content="Second answer.")],
+        agent_settings,
+    )
+    cfg = {"metadata": {"session_id": "sess-1"}}
+
+    agent.invoke("Quando carregar o carro?", config=cfg)
+    result = agent.invoke("E no fim de semana?", config=cfg)
+
+    contents = [str(m.content) for m in result["messages"]]
+    assert "Quando carregar o carro?" in contents
+    assert "First answer." in contents
+    assert result["messages"][-1].content == "Second answer."
+
+
+def test_without_session_id_each_request_is_isolated(agent_settings) -> None:
+    agent = make_agent(
+        [AIMessage(content="First answer."), AIMessage(content="Second answer.")],
+        agent_settings,
+    )
+
+    agent.invoke("Primeira pergunta")
+    result = agent.invoke("Segunda pergunta")
+
+    contents = [str(m.content) for m in result["messages"]]
+    assert "Primeira pergunta" not in contents
+    assert "First answer." not in contents
+
+
+def test_stream_shares_memory_with_invoke_in_same_session(agent_settings) -> None:
+    agent = make_agent(
+        [AIMessage(content="First answer."), AIMessage(content="Follow-up answer.")],
+        agent_settings,
+    )
+    cfg = {"metadata": {"session_id": "sess-2"}}
+
+    agent.invoke("Pergunta inicial", config=cfg)
+    chunks = list(agent.stream("E depois?", config=cfg))
+
+    assert "".join(chunks) == "Follow-up answer."
+
+
 # ── B-3: budget enforcement ───────────────────────────────────────────
 
 EXPENSIVE_ANSWER = AIMessage(
