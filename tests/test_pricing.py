@@ -1,6 +1,7 @@
 """Tests for energy_advisor.services.pricing — tarifas Enel SP em BRL."""
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 import pytest
@@ -101,16 +102,16 @@ def test_pricing_exposes_data_provenance(monkeypatch, tmp_path):
 
 def test_pricing_uses_disk_cache_when_available(monkeypatch, tmp_path):
     cache_path = tmp_path / "aneel_cache.json"
+    # fetched_at must be in the current month (_cache_valid expires monthly),
+    # so build it dynamically — a hardcoded date turns this test into a time bomb.
+    fetched_at = datetime.now().isoformat(timespec="seconds")
     cache_path.write_text(
-        """{
-  "fetched_at": "2026-05-24T10:00:00",
-  "source": "disk_cache",
-  "fallback_used": false,
-  "bandeiras": {
-    "2026-05": ["amarela", 0.01234]
-  }
-}
-""",
+        json.dumps({
+            "fetched_at": fetched_at,
+            "source": "disk_cache",
+            "fallback_used": False,
+            "bandeiras": {"2026-05": ["amarela", 0.01234]},
+        }),
         encoding="utf-8",
     )
     monkeypatch.setenv("ENERGY_ADVISOR_ANEEL_CACHE_PATH", str(cache_path))
