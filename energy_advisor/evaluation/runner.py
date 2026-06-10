@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from ..agent import EnergyAdvisorAgent
 from ..config import Settings
-from ..observability import estimate_llm_cost
+from ..observability import cost_from_tokens, estimate_llm_cost, extract_token_usage
 from .scenarios import ALL_SCENARIOS, QUICK_SCENARIOS, Scenario
 
 # ── Judge output schema ───────────────────────────────────────────────
@@ -71,6 +71,36 @@ def get_final_answer(result: dict[str, Any]) -> str:
         if isinstance(msg, AIMessage) and not msg.tool_calls:
             return msg.content
     return ""
+
+
+def is_ordered_subsequence(required: list[str], called: list[str]) -> bool:
+    """True when `required` appears in `called` in order, allowing interleaving.
+
+    Example: required=[A, C] matches called=[A, B, C] but not called=[C, A].
+    """
+    it = iter(called)
+    return all(tool in it for tool in required)
+
+
+def check_trajectory(scenario: Scenario, called_tools: list[str]) -> dict[str, Any]:
+    """Evaluate a scenario's tool trajectory against the agent's actual calls.
+
+    Two independent checks, reported separately so a report reader can tell
+    *why* a trajectory failed:
+    - membership: every required tool was called (missing_tools empty)
+    - order: required tools appear as an ordered subsequence (when order_matters)
+    """
+    missing_tools = [t for t in scenario.required_tools if t not in called_tools]
+    order_pass = (
+        is_ordered_subsequence(scenario.required_tools, called_tools)
+        if scenario.order_matters
+        else True
+    )
+    return {
+        "missing_tools": missing_tools,
+        "order_pass": order_pass,
+        "trajectory_pass": not missing_tools and order_pass,
+    }
 
 
 # ── LLM-as-judge ─────────────────────────────────────────────────────
@@ -125,9 +155,17 @@ def evaluate_scenario(
         error = str(exc)
         logger.error("Scenario {} failed: {}", scenario.id, exc)
 
-    cost_estimate = estimate_llm_cost(settings.selected_model(), scenario.question, final_answer)
-    missing_tools = [t for t in scenario.required_tools if t not in called_tools]
-    trajectory_pass = len(missing_tools) == 0
+    usage = extract_token_usage(result) if not error else None
+    if usage is not None:
+        cost_estimate = cost_from_tokens(
+            settings.selected_model(), usage[0], usage[1], pricing=settings.model_pricing()
+        )
+    else:
+        cost_estimate = estimate_llm_cost(
+            settings.selected_model(), scenario.question, final_answer,
+            pricing=settings.model_pricing(),
+        )
+    trajectory = check_trajectory(scenario, called_tools)
     over_latency_budget = elapsed > settings.max_request_latency_s
     over_cost_budget = cost_estimate.estimated_cost_usd > settings.max_request_cost_usd
 
@@ -152,14 +190,17 @@ def evaluate_scenario(
         "question":        scenario.question,
         "tags":            scenario.tags,
         "required_tools":  scenario.required_tools,
+        "order_matters":   scenario.order_matters,
         "called_tools":    called_tools,
-        "trajectory_pass": trajectory_pass,
-        "missing_tools":   missing_tools,
+        "trajectory_pass": trajectory["trajectory_pass"],
+        "order_pass":      trajectory["order_pass"],
+        "missing_tools":   trajectory["missing_tools"],
         "final_answer":    final_answer,
         "elapsed_s":       elapsed,
         "input_tokens_estimate": cost_estimate.input_tokens,
         "output_tokens_estimate": cost_estimate.output_tokens,
         "estimated_cost_usd": cost_estimate.estimated_cost_usd,
+        "cost_source":     cost_estimate.cost_source,
         "over_latency_budget": over_latency_budget,
         "over_cost_budget": over_cost_budget,
         "error":           error,
@@ -300,6 +341,8 @@ def _print_summary(report: dict[str, Any]) -> None:
     for r in report["scenarios"]:
         icon = "✅" if r["trajectory_pass"] else "❌"
         missing = f"  missing: {r['missing_tools']}" if r["missing_tools"] else ""
+        if not r.get("order_pass", True):
+            missing += "  order: out-of-sequence"
         judge_str = ""
         if r.get("judge_scores"):
             judge_str = f"  judge={r['judge_scores']['overall']:.1f}"

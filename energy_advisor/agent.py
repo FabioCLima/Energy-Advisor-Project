@@ -6,7 +6,9 @@ from collections.abc import Iterator
 from datetime import datetime, timedelta
 from typing import Annotated, Any, TypedDict
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
+    AIMessage,
     AIMessageChunk,
     BaseMessage,
     HumanMessage,
@@ -15,6 +17,7 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
+from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
@@ -22,11 +25,25 @@ from loguru import logger
 
 from .config import Settings
 from .contract import AgentContract
-from .guardrails import ensure_safe_model_output, ensure_safe_user_input
+from .guardrails import (
+    GuardrailMode,
+    GuardrailViolation,
+    ensure_safe_model_output,
+    ensure_safe_user_input,
+    validate_model_output,
+)
 from .logging import configure_logging
 from .observability import TraceRecorder, build_agent_trace, extract_final_answer, new_request_id
 from .prompts import SYSTEM_INSTRUCTIONS
 from .tools import TOOL_KIT
+
+# Honest fallback when the ReAct loop hits its iteration cap. The user gets a
+# clear limitation statement instead of a GraphRecursionError stack trace.
+RECURSION_FALLBACK_ANSWER = (
+    "Não consegui concluir a análise dentro do limite de etapas configurado. "
+    "Tente reformular a pergunta ou reduzir o escopo (por exemplo, um período "
+    "ou dispositivo específico)."
+)
 
 
 class AgentState(TypedDict):
@@ -43,6 +60,9 @@ class EnergyAdvisorAgent:
         agent = EnergyAdvisorAgent()
         result = agent.invoke("When should I charge my EV?")
         print(result["messages"][-1].content)
+
+    Dependency injection (used by the test suite to run without API key/network):
+        agent = EnergyAdvisorAgent(chat_model=fake_model, tools=[fake_tool])
     """
 
     def __init__(
@@ -51,6 +71,8 @@ class EnergyAdvisorAgent:
         settings: Settings | None = None,
         model: str | None = None,
         contract: AgentContract | None = None,
+        chat_model: BaseChatModel | None = None,
+        tools: list[Any] | None = None,
     ) -> None:
         # Load .env from repo root or ecohome_solution/
         try:
@@ -68,11 +90,25 @@ class EnergyAdvisorAgent:
         self._configure_langsmith()
 
         selected_model = model or self.settings.selected_model()
-        api_key = self.settings.selected_api_key()
-        if not api_key:
-            raise ValueError(
-                "No API key found. Set OPENAI_API_KEY, VOCAREUM_API_KEY, "
-                "or ENERGY_ADVISOR_API_KEY in your .env file."
+        self._tools = tools if tools is not None else TOOL_KIT
+
+        if chat_model is None:
+            api_key = self.settings.selected_api_key()
+            if not api_key:
+                raise ValueError(
+                    "No API key found. Set OPENAI_API_KEY, VOCAREUM_API_KEY, "
+                    "or ENERGY_ADVISOR_API_KEY in your .env file."
+                )
+            chat_model = ChatOpenAI(
+                model=selected_model,
+                temperature=self.settings.temperature,
+                base_url=self.settings.base_url,
+                api_key=api_key,
+                timeout=self.settings.llm_timeout_s,
+                max_retries=self.settings.llm_max_retries,
+                # Report token usage on the final chunk of streamed responses,
+                # so cost accounting works for stream() as well as invoke().
+                stream_usage=True,
             )
 
         logger.info(
@@ -85,13 +121,7 @@ class EnergyAdvisorAgent:
         self._selected_model = selected_model
         self._trace_recorder = TraceRecorder(self.settings.observability_trace_path)
 
-        llm = ChatOpenAI(
-            model=selected_model,
-            temperature=self.settings.temperature,
-            base_url=self.settings.base_url,
-            api_key=api_key,
-        )
-        llm_with_tools = llm.bind_tools(TOOL_KIT)
+        llm_with_tools = chat_model.bind_tools(self._tools)
 
         # ── Graph (Schema, Nodes, Edges) ─────────────────────────────
         #
@@ -104,7 +134,7 @@ class EnergyAdvisorAgent:
             response = llm_with_tools.invoke(state["messages"])
             return {"messages": [response]}
 
-        tools_node = ToolNode(TOOL_KIT)
+        tools_node = ToolNode(self._tools)
 
         def route_after_assistant(state: AgentState) -> str:
             last = state["messages"][-1] if state.get("messages") else None
@@ -136,6 +166,16 @@ class EnergyAdvisorAgent:
         messages.append(HumanMessage(content=question))
         return messages
 
+    def _runtime_config(self, config: RunnableConfig | None) -> RunnableConfig:
+        """Merge caller config with the explicit ReAct iteration cap.
+
+        One iteration = assistant step + tools step (2 graph super-steps),
+        plus the final assistant step that produces the answer.
+        """
+        merged: dict[str, Any] = dict(config) if isinstance(config, dict) else {}
+        merged.setdefault("recursion_limit", 2 * self.settings.max_agent_iterations + 1)
+        return merged
+
     def invoke(
         self,
         question: str,
@@ -153,8 +193,26 @@ class EnergyAdvisorAgent:
             ensure_safe_user_input(question, mode=self.contract.enforcement_mode)
             result = self.graph.invoke(
                 {"messages": self._build_messages(question, context)},
-                config=config,
+                config=self._runtime_config(config),
             )
+        except GraphRecursionError:
+            elapsed = time.perf_counter() - t0
+            logger.warning(
+                "Agent hit max_agent_iterations={} | request_id={}",
+                self.settings.max_agent_iterations,
+                request_id,
+            )
+            result = {"messages": [AIMessage(content=RECURSION_FALLBACK_ANSWER)]}
+            self._record_trace(
+                question=question,
+                result=result,
+                latency_s=elapsed,
+                request_id=request_id,
+                session_id=session_id,
+                metadata=metadata,
+                error="recursion_limit",
+            )
+            return result
         except Exception as exc:
             elapsed = time.perf_counter() - t0
             self._record_trace(
@@ -198,36 +256,112 @@ class EnergyAdvisorAgent:
         context: str | None = None,
         config: RunnableConfig | None = None,
     ) -> Iterator[str]:
-        """Stream the final response token by token via LangGraph stream_mode='messages'.
+        """Stream the final response token by token, under the same controls as invoke().
+
+        Guardrails: the accumulated output is validated on every chunk. Streaming has
+        no "final answer" to check before sending, so the trade-off is explicit —
+        earlier chunks may already have reached the client, but the stream stops at
+        the first violating chunk instead of leaking the rest.
+
+        Observability: one AgentTrace is recorded per stream, same as invoke(),
+        built from the final graph state (stream_mode "values").
 
         Yields text chunks from the assistant's final answer only — tool-calling
         intermediate messages are filtered out. Tool names are accumulated in
         self.last_tools_used as a side effect, readable after the generator is exhausted.
-
-        Args:
-            question: The user's natural-language question.
-            context: Optional extra context injected as a system message.
-
-        Yields:
-            str: Individual text chunks of the final response.
         """
-        ensure_safe_user_input(question, mode=self.contract.enforcement_mode)
+        request_id, session_id, metadata = self._observability_context(config)
+        t0 = time.perf_counter()
+        try:
+            ensure_safe_user_input(question, mode=self.contract.enforcement_mode)
+        except Exception as exc:
+            self._record_trace(
+                question=question,
+                result=None,
+                latency_s=time.perf_counter() - t0,
+                request_id=request_id,
+                session_id=session_id,
+                metadata=metadata,
+                error=str(exc),
+            )
+            raise
+
         self.last_tools_used: list[str] = []
-        for chunk, metadata in self.graph.stream(  # type: ignore[misc]
-            {"messages": self._build_messages(question, context)},
-            config=config,
-            stream_mode="messages",
-        ):
-            if (
-                isinstance(chunk, AIMessageChunk)
-                and chunk.content
-                and not chunk.tool_call_chunks
-                and metadata.get("langgraph_node") == "assistant"
+        accumulated = ""
+        last_state: dict[str, Any] | None = None
+        audit_logged = False
+
+        def _check_accumulated() -> None:
+            nonlocal audit_logged
+            check = validate_model_output(accumulated)
+            if check.passed:
+                return
+            if self.contract.enforcement_mode == GuardrailMode.AUDIT:
+                if not audit_logged:
+                    logger.warning("AUDIT — Guardrail [stream-output] [{}] {}", check.severity, check.reason)
+                    audit_logged = True
+                return
+            raise GuardrailViolation(check.reason or "Unsafe output rejected.")
+
+        try:
+            for mode, payload in self.graph.stream(  # type: ignore[misc]
+                {"messages": self._build_messages(question, context)},
+                config=self._runtime_config(config),
+                stream_mode=["messages", "values"],
             ):
-                yield chunk.content
-            elif isinstance(chunk, ToolMessage) and chunk.name:
-                if chunk.name not in self.last_tools_used:
-                    self.last_tools_used.append(chunk.name)
+                if mode == "values":
+                    last_state = payload
+                    continue
+                chunk, chunk_meta = payload
+                if (
+                    isinstance(chunk, AIMessageChunk)
+                    and chunk.content
+                    and not chunk.tool_call_chunks
+                    and chunk_meta.get("langgraph_node") == "assistant"
+                ):
+                    accumulated += chunk.content
+                    _check_accumulated()
+                    yield chunk.content
+                elif isinstance(chunk, ToolMessage) and chunk.name:
+                    if chunk.name not in self.last_tools_used:
+                        self.last_tools_used.append(chunk.name)
+        except GraphRecursionError:
+            logger.warning(
+                "Agent hit max_agent_iterations={} during stream | request_id={}",
+                self.settings.max_agent_iterations,
+                request_id,
+            )
+            self._record_trace(
+                question=question,
+                result=last_state,
+                latency_s=time.perf_counter() - t0,
+                request_id=request_id,
+                session_id=session_id,
+                metadata=metadata,
+                error="recursion_limit",
+            )
+            yield RECURSION_FALLBACK_ANSWER
+            return
+        except Exception as exc:
+            self._record_trace(
+                question=question,
+                result=last_state,
+                latency_s=time.perf_counter() - t0,
+                request_id=request_id,
+                session_id=session_id,
+                metadata=metadata,
+                error=str(exc),
+            )
+            raise
+
+        self._record_trace(
+            question=question,
+            result=last_state,
+            latency_s=time.perf_counter() - t0,
+            request_id=request_id,
+            session_id=session_id,
+            metadata=metadata,
+        )
 
     def _observability_context(
         self, config: RunnableConfig | None
@@ -266,12 +400,13 @@ class EnergyAdvisorAgent:
             session_id=session_id,
             error=error,
             metadata=metadata,
+            pricing=self.settings.model_pricing(),
         )
         self._trace_recorder.record(trace)
 
     def get_agent_tools(self) -> list[str]:
         """Return the names of all registered tools."""
-        return [t.name for t in TOOL_KIT]
+        return [t.name for t in self._tools]
 
     def _configure_langsmith(self) -> None:
         """Set LangSmith environment variables from settings if present."""

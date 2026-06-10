@@ -16,6 +16,10 @@ class Scenario:
     required_tools: list[str]
     judge_rubric: str
     tags: list[str] = field(default_factory=list)
+    # When True, required_tools must appear as an ordered subsequence of the
+    # agent's calls (interleaving extra tools is fine). Set False for scenarios
+    # where the grounding tools are independent and order carries no meaning.
+    order_matters: bool = True
 
 
 ALL_SCENARIOS: list[Scenario] = [
@@ -28,6 +32,7 @@ ALL_SCENARIOS: list[Scenario] = [
             "e mencionar se há geração solar relevante naquele período."
         ),
         tags=["ev", "pricing", "weather"],
+        order_matters=False,  # pricing and weather ground the answer independently
     ),
     Scenario(
         id="home_office_cost_30d",
@@ -110,6 +115,7 @@ ALL_SCENARIOS: list[Scenario] = [
             "e dar uma recomendação concreta de horário."
         ),
         tags=["solar", "weather", "scheduling"],
+        order_matters=False,  # weather and pricing ground the answer independently
     ),
     Scenario(
         id="annual_solar_savings",

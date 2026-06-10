@@ -29,6 +29,14 @@ class Settings(BaseSettings):
 
     temperature: float = Field(0.0, alias="ENERGY_ADVISOR_TEMPERATURE")
 
+    # ── Agent loop limits ────────────────────────────────────────────
+    # Each ReAct iteration = one assistant step + one tools step. Without an
+    # explicit cap, a model that keeps requesting tools runs until LangGraph's
+    # implicit recursion limit aborts with a cryptic error — at full LLM cost.
+    max_agent_iterations: int = Field(10, alias="ENERGY_ADVISOR_MAX_AGENT_ITERATIONS")
+    llm_timeout_s: float = Field(60.0, alias="ENERGY_ADVISOR_LLM_TIMEOUT_S")
+    llm_max_retries: int = Field(2, alias="ENERGY_ADVISOR_LLM_MAX_RETRIES")
+
     # ── API / endpoint ───────────────────────────────────────────────
     base_url: str | None = Field(None, alias="ENERGY_ADVISOR_BASE_URL")
     api_key: str | None = Field(None, alias="ENERGY_ADVISOR_API_KEY")
@@ -63,6 +71,8 @@ class Settings(BaseSettings):
     )
     max_request_cost_usd: float = Field(0.01, alias="ENERGY_ADVISOR_MAX_REQUEST_COST_USD")
     max_request_latency_s: float = Field(20.0, alias="ENERGY_ADVISOR_MAX_REQUEST_LATENCY_S")
+    # JSON mapping model name → [input_usd_per_1k, output_usd_per_1k], merged over defaults.
+    model_pricing_json: str | None = Field(None, alias="ENERGY_ADVISOR_MODEL_PRICING_JSON")
 
     # ── LangSmith tracing (optional) ────────────────────────────────
     langchain_api_key: str | None = Field(None, alias="LANGCHAIN_API_KEY")
@@ -105,3 +115,12 @@ class Settings(BaseSettings):
     def usage_forecast_model_path(self, device_type: str | None = None) -> str:
         slug = (device_type or "all").strip().lower()
         return os.path.join(self.models_dir, f"usage_forecaster_{slug}.joblib")
+
+    def model_pricing(self) -> dict[str, tuple[float, float]] | None:
+        """Optional pricing override parsed from ENERGY_ADVISOR_MODEL_PRICING_JSON."""
+        if not self.model_pricing_json:
+            return None
+        import json
+
+        raw = json.loads(self.model_pricing_json)
+        return {model: (float(io[0]), float(io[1])) for model, io in raw.items()}

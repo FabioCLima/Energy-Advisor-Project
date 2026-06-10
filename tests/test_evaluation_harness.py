@@ -6,8 +6,63 @@ import re
 from energy_advisor.evaluation.runner import (
     _append_eval_history,
     _default_output_path,
+    check_trajectory,
     compute_summary,
+    is_ordered_subsequence,
 )
+from energy_advisor.evaluation.scenarios import Scenario
+
+
+def _scenario(required: list[str], order_matters: bool = True) -> Scenario:
+    return Scenario(
+        id="s1",
+        question="q",
+        required_tools=required,
+        judge_rubric="r",
+        order_matters=order_matters,
+    )
+
+
+# ── A-3: ordered trajectory tests ─────────────────────────────────────
+
+def test_is_ordered_subsequence_allows_interleaving() -> None:
+    assert is_ordered_subsequence(["a", "c"], ["a", "b", "c"]) is True
+
+
+def test_is_ordered_subsequence_rejects_wrong_order() -> None:
+    assert is_ordered_subsequence(["a", "b"], ["b", "a"]) is False
+
+
+def test_is_ordered_subsequence_empty_required_always_passes() -> None:
+    assert is_ordered_subsequence([], ["a"]) is True
+
+
+def test_check_trajectory_fails_on_wrong_order_when_order_matters() -> None:
+    result = check_trajectory(_scenario(["a", "b"]), ["b", "a"])
+
+    assert result["missing_tools"] == []
+    assert result["order_pass"] is False
+    assert result["trajectory_pass"] is False
+
+
+def test_check_trajectory_passes_wrong_order_when_order_is_free() -> None:
+    result = check_trajectory(_scenario(["a", "b"], order_matters=False), ["b", "a"])
+
+    assert result["order_pass"] is True
+    assert result["trajectory_pass"] is True
+
+
+def test_check_trajectory_reports_missing_tools() -> None:
+    result = check_trajectory(_scenario(["a", "b"]), ["a"])
+
+    assert result["missing_tools"] == ["b"]
+    assert result["trajectory_pass"] is False
+
+
+def test_check_trajectory_passes_exact_match() -> None:
+    result = check_trajectory(_scenario(["a", "b"]), ["a", "x", "b"])
+
+    assert result["trajectory_pass"] is True
 
 
 def test_compute_summary_includes_operational_quality_gates() -> None:

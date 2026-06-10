@@ -8,8 +8,10 @@ from energy_advisor.observability import (
     AgentTrace,
     TraceRecorder,
     build_agent_trace,
+    cost_from_tokens,
     estimate_llm_cost,
     estimate_tokens,
+    extract_token_usage,
     extract_tool_call_details,
 )
 
@@ -26,6 +28,87 @@ def test_estimate_llm_cost_uses_known_model_pricing() -> None:
     assert estimate.input_tokens == 1000
     assert estimate.output_tokens == 500
     assert estimate.estimated_cost_usd == 0.00045
+
+
+def test_estimate_llm_cost_declares_heuristic_source() -> None:
+    assert estimate_llm_cost("gpt-4o-mini", "abc", "def").cost_source == "heuristic"
+
+
+# ── A-4: real token accounting ────────────────────────────────────────
+
+def test_cost_from_tokens_uses_pricing_table() -> None:
+    estimate = cost_from_tokens("gpt-4o-mini", 1000, 500)
+
+    assert estimate.estimated_cost_usd == 0.00045
+    assert estimate.cost_source == "usage_metadata"
+
+
+def test_cost_from_tokens_accepts_pricing_override() -> None:
+    estimate = cost_from_tokens("my-model", 1000, 1000, pricing={"my-model": (0.01, 0.02)})
+
+    assert estimate.estimated_cost_usd == 0.03
+
+
+def test_extract_token_usage_sums_every_llm_iteration() -> None:
+    result = {
+        "messages": [
+            AIMessage(
+                content="",
+                tool_calls=[{"id": "c1", "name": "t", "args": {}}],
+                usage_metadata={"input_tokens": 700, "output_tokens": 30, "total_tokens": 730},
+            ),
+            ToolMessage(content="data", tool_call_id="c1", name="t"),
+            AIMessage(
+                content="final",
+                usage_metadata={"input_tokens": 900, "output_tokens": 120, "total_tokens": 1020},
+            ),
+        ]
+    }
+
+    assert extract_token_usage(result) == (1600, 150)
+
+
+def test_extract_token_usage_returns_none_without_metadata() -> None:
+    result = {"messages": [AIMessage(content="no usage")]}
+
+    assert extract_token_usage(result) is None
+
+
+def test_build_agent_trace_prefers_usage_metadata_over_heuristic() -> None:
+    result = {
+        "messages": [
+            AIMessage(
+                content="final answer",
+                usage_metadata={"input_tokens": 2000, "output_tokens": 400, "total_tokens": 2400},
+            )
+        ]
+    }
+
+    trace = build_agent_trace(
+        question="short q",
+        result=result,
+        model="gpt-4o-mini",
+        latency_s=1.0,
+        max_cost_usd=0.01,
+        max_latency_s=20.0,
+    )
+
+    assert trace.cost_source == "usage_metadata"
+    assert trace.input_tokens == 2000
+    assert trace.output_tokens == 400
+
+
+def test_build_agent_trace_falls_back_to_heuristic() -> None:
+    trace = build_agent_trace(
+        question="short q",
+        result={"messages": [AIMessage(content="plain")]},
+        model="gpt-4o-mini",
+        latency_s=1.0,
+        max_cost_usd=0.01,
+        max_latency_s=20.0,
+    )
+
+    assert trace.cost_source == "heuristic"
 
 
 def test_trace_recorder_writes_jsonl(tmp_path) -> None:

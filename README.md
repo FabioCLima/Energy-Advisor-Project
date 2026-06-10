@@ -4,7 +4,7 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-ReAct_Agent-6B48FF?logo=chainlink&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?logo=streamlit&logoColor=white)
 ![Open-Meteo](https://img.shields.io/badge/Open--Meteo-Real_Weather-4CAF50?logo=cloudflarepages&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-140_passed-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-166_passed-brightgreen?logo=pytest&logoColor=white)
 ![Coverage](https://img.shields.io/badge/Coverage-81%25-brightgreen?logo=pytest&logoColor=white)
 ![CI](https://github.com/FabioCLima/Energy-Advisor-Project/actions/workflows/ci.yml/badge.svg?branch=master)
 ![Docker](https://img.shields.io/badge/GHCR-ghcr.io%2Ffabiolima%2Fenergy--advisor-2496ED?logo=docker&logoColor=white)
@@ -66,10 +66,10 @@ That framing matters for recruiters and interviewers: the project demonstrates t
 | Product surface | Streamlit dashboard + chat | Dedicated frontend, auth, user accounts |
 | Agent service | FastAPI + LangGraph ReAct agent | Multi-tenant API, rate limits, service mesh |
 | Model/agent evaluation | Scenario harness, tool trajectory checks, optional LLM-as-judge | CI quality gates, larger benchmark sets, human review workflows |
-| Observability | Local JSONL traces with tools, latency, tokens/cost, session_id correlation, and per-tool-call args + response size | LangSmith/OpenTelemetry traces, Prometheus/Grafana, CloudWatch alarms |
-| Cost control | Per-request estimated cost and budget flags | Budget enforcement, model routing, cache policy, org-level cost dashboards |
+| Observability | Local JSONL traces with tools, latency, tokens/cost, session_id correlation, and per-tool-call args + response size — recorded on both `invoke` and `stream` paths | LangSmith/OpenTelemetry traces, Prometheus/Grafana, CloudWatch alarms |
+| Cost control | Real token counts from provider `usage_metadata` (covering every ReAct iteration), with labelled chars/4 heuristic fallback (`cost_source` field); per-request budget flags | Budget enforcement, model routing, cache policy, org-level cost dashboards |
 | Drift monitoring | Offline baseline vs current window checks for energy data and forecast error | Scheduled Evidently/MLflow jobs, retraining triggers, model registry governance |
-| Guardrails | Severity-tiered checks (low→critical): prompt injection, secret leakage, Brazilian PII/LGPD (CPF, CNPJ, phone, e-mail); AUDIT/BLOCK mode configurable via env var | Policy engine, red-team suites, audit logs |
+| Guardrails | Severity-tiered checks (low→critical): prompt injection, secret leakage, Brazilian PII/LGPD (CPF, CNPJ, phone, e-mail); AUDIT/BLOCK mode configurable via env var; output validation applied to **both** `invoke` and token streaming (incremental check per chunk) | Policy engine, red-team suites, audit logs |
 | Deployment | Docker, Streamlit Cloud path, AWS App Runner path | IaC, blue/green deploys, autoscaling, secrets manager, VPC controls |
 
 ### How MLE and AI Engineer converge here
@@ -220,7 +220,7 @@ Six-layer design — each layer testable and replaceable independently:
 | 5. Storage | SQLite + ChromaDB | Time-series + vector embeddings |
 | 6. Observability | Loguru + LangSmith | Structured logs + optional trace UI |
 
-The agent operates on a shared `AgentState` object that flows through the LangGraph graph. It carries: `messages` (the full conversation thread), `tool_calls` (the current round's requested tools), and user context injected by the system prompt. Each node reads from and writes to this state — making the graph's behavior fully inspectable at every step.
+The agent operates on a shared `AgentState` object that flows through the LangGraph graph. Its schema is deliberately minimal: `messages` (the full conversation thread, including tool calls and tool responses embedded in the message history). Each node reads from and writes to this state — making the graph's behavior fully inspectable at every step. The ReAct loop runs under an explicit iteration cap (`ENERGY_ADVISOR_MAX_AGENT_ITERATIONS`): when exceeded, the user receives an honest "couldn't finish" answer and the trace records `error=recursion_limit` instead of surfacing a stack trace.
 
 **Key decisions:**
 
@@ -254,7 +254,7 @@ Device profiles use `prob_fn: Callable[[datetime], float]` encoding domain knowl
 
 The agent is evaluated in two independent dimensions:
 
-**Trajectory evaluation** — each scenario in the harness defines the expected tool trajectory — the ordered sequence of tool calls the agent must make to produce a grounded answer. Responses that bypass tool calls fail automatically. A scenario asking "quanto custou meu home office em abril?" must call `query_energy_usage` + `get_electricity_prices`. If the agent responds without those calls, it fails — even if the answer looks correct.
+**Trajectory evaluation** — each scenario defines the tools the agent must call to produce a grounded answer, checked in two independent dimensions reported separately: **membership** (every required tool was called) and **order** (required tools appear as an ordered subsequence of the actual calls, allowing interleaving). Scenarios where the grounding tools are independent declare `order_matters=False`. Responses that bypass tool calls fail automatically — even if the answer looks correct.
 
 **LLM-as-judge** — a separate LLM scores the final response on four criteria with rubric:
 1. **Grounding** — numbers in the response are traceable to tool output
@@ -315,7 +315,7 @@ Known limitation: the model forecasts recursively, so error accumulates with lon
 | Dashboard | Streamlit + Plotly |
 | Logging | Loguru (structured) + LangSmith (optional tracing) |
 | Container | Docker + Docker Compose · single image with `streamlit` / `api` runtime modes |
-| Tests | pytest · 140 tests · 81% coverage |
+| Tests | pytest · 166 tests · 81% coverage (incl. agent graph tests with injected fake model — no API key needed) |
 | Linting | Ruff |
 
 ---
@@ -349,7 +349,7 @@ Energy-Advisor-Project/
 │       ├── recommendations.py    ← Savings calculation engine
 │       ├── retrieval.py          ← ChromaDB RAG pipeline
 │       └── usage_forecasting_ml.py ← HistGradientBoostingRegressor + evaluation
-├── tests/                        ← 140 unit tests (81% coverage)
+├── tests/                        ← 166 unit tests (81% coverage)
 ├── data/
 │   ├── documents/                ← RAG knowledge base (5 docs)
 │   ├── energy_data.db            ← SQLite (generated on first run)
