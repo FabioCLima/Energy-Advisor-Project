@@ -79,13 +79,32 @@ class AgentTrace:
 
 
 class TraceRecorder:
-    """Append-only JSONL recorder for local agent traces."""
+    """Append-only JSONL recorder for local agent traces.
 
-    def __init__(self, path: str) -> None:
+    Size-based rotation: when the file exceeds max_bytes, it is moved to
+    `<name>.1` (replacing the previous backup) and a fresh file starts. One
+    generation of backup is deliberate — local traces are operational data,
+    not an archive; long-term retention belongs to LangSmith/object storage.
+    """
+
+    def __init__(self, path: str, max_bytes: int | None = None) -> None:
         self.path = Path(path)
+        self.max_bytes = max_bytes
+
+    def _rotate_if_needed(self) -> None:
+        if not self.max_bytes:
+            return
+        try:
+            if self.path.exists() and self.path.stat().st_size >= self.max_bytes:
+                backup = self.path.with_name(self.path.name + ".1")
+                self.path.replace(backup)
+        except OSError:
+            # Rotation is best-effort; never lose the trace over housekeeping.
+            pass
 
     def record(self, trace: AgentTrace) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._rotate_if_needed()
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(asdict(trace), ensure_ascii=False, sort_keys=True) + "\n")
 

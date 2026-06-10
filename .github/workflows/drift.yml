@@ -1,0 +1,80 @@
+# Weekly drift report.
+#
+# Drift is a warning, not a build failure: detecting change is information;
+# deciding what to do about it is human work. No LLM/API key involved.
+name: Drift Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * 3" # Wednesdays 09:00 UTC
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv pip install -r requirements.txt --system
+
+      - name: Bootstrap demo data
+        run: |
+          python -m energy_advisor.bootstrap.db_setup
+          python -m energy_advisor.bootstrap.sample_data
+        env:
+          OPENAI_API_KEY: not-needed-for-bootstrap
+
+      - name: Run drift report
+        run: |
+          python -m energy_advisor.services.drift_report --output drift_report_ci.json
+        env:
+          OPENAI_API_KEY: not-needed-for-drift
+
+      - name: Summarize (warn on drift, never fail)
+        run: |
+          python - <<'EOF'
+          import json, os
+
+          report = json.load(open("drift_report_ci.json"))
+          lines = [
+              "## Drift Report",
+              f"- baseline: {report['baseline_window'][0]} → {report['baseline_window'][1]}",
+              f"- current: {report['current_window'][0]} → {report['current_window'][1]}",
+              f"- threshold: {report['mean_shift_threshold']:.0%} mean shift",
+          ]
+          for name, section in report["series"].items():
+              for f in section["feature_results"]:
+                  flag = "⚠️ DRIFT" if f["drift_detected"] else "✅"
+                  lines.append(
+                      f"- {name}/{f['feature']}: baseline {f['baseline_mean']} → "
+                      f"current {f['current_mean']} ({f['relative_change']:+.1%}) {flag}"
+                  )
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+              fh.write("\n".join(lines) + "\n")
+
+          if report["drift_detected"]:
+              print("::warning title=Energy data drift detected::"
+                    "Baseline vs current mean shift exceeded threshold. "
+                    "See the drift-report artifact.")
+          else:
+              print("No drift detected.")
+          EOF
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-report
+          path: drift_report_ci.json

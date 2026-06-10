@@ -8,11 +8,14 @@
 > **STATUS (10/jun/2026):** EPICs A–D **concluídos e publicados** (commits
 > `342c664..2f77feb`): integridade, auditabilidade, evolução e didática. Gate de
 > avaliação verde no CI; eval completo 12/12 com `cost_source=usage_metadata`.
-> **EPIC E (Profundidade), seção 7:** E1–E3 (must-haves) **concluídos** em
-> 10/jun — eval com 18 cenários em 4 categorias (18/18 ao vivo; o harness novo
-> pegou e corrigiu um bug real de citação RAG no caminho), topicalidade
-> enforçada no contrato (ADR-010), Alembic como único caminho de schema.
-> E4 (drift agendado) e E5 (leitor de traces) permanecem como evolução.
+> **EPIC E (Profundidade), seção 7: CONCLUÍDO INTEGRALMENTE em 10/jun.**
+> E1 eval com 18 cenários em 4 categorias (18/18 ao vivo; o harness novo pegou
+> e corrigiu um bug real de citação RAG no caminho); E2 topicalidade enforçada
+> no contrato (ADR-010); E3 Alembic como único caminho de schema; E4 drift como
+> processo semanal (`drift.yml` + `python -m energy_advisor.services.drift_report`);
+> E5 leitor de traces (`python -m energy_advisor.observability.report`) com
+> rotação por tamanho. **Este backlog está fechado** — 253 testes, 81% cobertura.
+> Próxima fase, se houver, nasce de uma nova revisão, não deste documento.
 
 ---
 

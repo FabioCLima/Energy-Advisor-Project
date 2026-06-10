@@ -86,6 +86,8 @@ class Settings(BaseSettings):
         "data/observability/agent_traces.jsonl",
         alias="ENERGY_ADVISOR_OBSERVABILITY_TRACE_PATH",
     )
+    # Size-based trace rotation (one .1 backup kept). 0 disables.
+    trace_max_mb: float = Field(50.0, alias="ENERGY_ADVISOR_TRACE_MAX_MB")
     # Calibrated against measured usage_metadata costs (gpt-4o-mini): multi-tool
     # scenarios legitimately reach ~$0.02/request. The previous $0.01 default was
     # set against the chars/4 heuristic, which understated real cost ~1000×.

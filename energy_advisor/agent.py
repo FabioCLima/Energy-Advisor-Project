@@ -136,7 +136,10 @@ class EnergyAdvisorAgent:
 
         self._system_message = SystemMessage(content=instructions)
         self._selected_model = selected_model
-        self._trace_recorder = TraceRecorder(self.settings.observability_trace_path)
+        self._trace_recorder = TraceRecorder(
+            self.settings.observability_trace_path,
+            max_bytes=int(self.settings.trace_max_mb * 1024 * 1024) or None,
+        )
 
         llm_with_tools = chat_model.bind_tools(self._tools)
 

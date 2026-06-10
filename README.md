@@ -4,7 +4,7 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-ReAct_Agent-6B48FF?logo=chainlink&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?logo=streamlit&logoColor=white)
 ![Open-Meteo](https://img.shields.io/badge/Open--Meteo-Real_Weather-4CAF50?logo=cloudflarepages&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-243_passed-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-253_passed-brightgreen?logo=pytest&logoColor=white)
 ![Coverage](https://img.shields.io/badge/Coverage-81%25-brightgreen?logo=pytest&logoColor=white)
 ![CI](https://github.com/FabioCLima/Energy-Advisor-Project/actions/workflows/ci.yml/badge.svg?branch=master)
 ![Docker](https://img.shields.io/badge/GHCR-ghcr.io%2Ffabiolima%2Fenergy--advisor-2496ED?logo=docker&logoColor=white)
@@ -66,9 +66,9 @@ That framing matters for recruiters and interviewers: the project demonstrates t
 | Product surface | Streamlit dashboard + chat | Dedicated frontend, auth, user accounts |
 | Agent service | FastAPI + LangGraph ReAct agent | Multi-tenant API, rate limits, service mesh |
 | Model/agent evaluation | 18 scenarios in 4 categories (core, **adversarial**, multi-turn, RAG-gabarito) with ordered tool-trajectory + behavioral checks, optional LLM-as-judge, CI eval gate (`eval.yml`), reports versioned by prompt/contract hash + git commit | Larger benchmark sets, human review workflows |
-| Observability | Local JSONL traces with tools, latency, tokens/cost, session_id correlation, and per-tool-call args + response size — recorded on both `invoke` and `stream` paths | LangSmith/OpenTelemetry traces, Prometheus/Grafana, CloudWatch alarms |
+| Observability | Local JSONL traces (both `invoke` and `stream` paths) with size-based rotation, plus a trace reader — `python -m energy_advisor.observability.report` aggregates cost/day, success rate, p95 latency, budget flags and top tools | LangSmith/OpenTelemetry traces, Prometheus/Grafana, CloudWatch alarms |
 | Cost control | Real token counts from provider `usage_metadata` (covering every ReAct iteration), with labelled chars/4 heuristic fallback (`cost_source` field); budget enforcement with AUDIT/BLOCK rollout (`ENERGY_ADVISOR_BUDGET_MODE` — BLOCK interrupts the loop mid-run, API returns 429) | Model routing, cache policy, org-level cost dashboards |
-| Drift monitoring | Offline baseline vs current window checks for energy data and forecast error | Scheduled Evidently/MLflow jobs, retraining triggers, model registry governance |
+| Drift monitoring | Baseline vs current window checks run as a **weekly scheduled process** (`drift.yml`: report artifact + warning annotation, never a build failure) and on demand via `python -m energy_advisor.services.drift_report` | Evidently/MLflow jobs, retraining triggers, model registry governance |
 | Guardrails | Severity-tiered checks (low→critical): bilingual (EN + PT-BR) prompt-injection patterns, secret leakage, Brazilian PII/LGPD (CPF, CNPJ, phone, e-mail); contract **topicality enforcement** (`ENERGY_ADVISOR_SCOPE_MODE`: AUDIT flags out-of-scope questions, BLOCK redirects without spending tokens); output validation applied to **both** `invoke` and token streaming | Classifier/moderation-based detection, policy engine, red-team suites |
 | Deployment | Docker, Streamlit Cloud path, AWS App Runner path | IaC, blue/green deploys, autoscaling, secrets manager, VPC controls |
 
@@ -349,7 +349,7 @@ Known limitation: the model forecasts recursively, so error accumulates with lon
 | Dashboard | Streamlit + Plotly |
 | Logging | Loguru (structured) + LangSmith (optional tracing) |
 | Container | Docker + Docker Compose · single image with `streamlit` / `api` runtime modes |
-| Tests | pytest · 243 tests · 81% coverage (incl. agent graph tests with injected fake model — no API key needed) |
+| Tests | pytest · 253 tests · 81% coverage (incl. agent graph tests with injected fake model — no API key needed) |
 | Linting | Ruff |
 
 ---
@@ -384,7 +384,7 @@ Energy-Advisor-Project/
 │       ├── recommendations.py    ← Savings calculation engine
 │       ├── retrieval.py          ← ChromaDB RAG pipeline
 │       └── usage_forecasting_ml.py ← HistGradientBoostingRegressor + evaluation
-├── tests/                        ← 243 unit tests (81% coverage)
+├── tests/                        ← 253 unit tests (81% coverage)
 ├── data/
 │   ├── documents/                ← RAG knowledge base (5 docs)
 │   ├── energy_data.db            ← SQLite (generated on first run)
