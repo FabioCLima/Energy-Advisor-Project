@@ -329,6 +329,7 @@ Known limitation: the model forecasts recursively, so error accumulates with lon
 
 | Document | What it is |
 |---|---|
+| [`docs/ONBOARDING_JUNIOR_AI_ENGINEER.md`](docs/ONBOARDING_JUNIOR_AI_ENGINEER.md) | 5-day onboarding track for a junior contributor: prerequisites, reading order, 3 graded tasks, pitfalls, book chapters, and the junior→senior path |
 | [`docs/adr/`](docs/adr/README.md) | Architecture Decision Records — one page per structural decision, with the cost of each |
 | [`docs/LEARNING_PATH.md`](docs/LEARNING_PATH.md) | Module → AI-engineering concept → interview question mapping, for juniors studying this repo |
 | [`docs/EXERCISES.md`](docs/EXERCISES.md) | 8 guided exercises (good-first-issue format) extending the project for real |
