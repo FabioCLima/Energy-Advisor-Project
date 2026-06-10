@@ -318,6 +318,17 @@ Known limitation: the model forecasts recursively, so error accumulates with lon
 
 ---
 
+## Documentation & Learning
+
+| Document | What it is |
+|---|---|
+| [`docs/adr/`](docs/adr/README.md) | Architecture Decision Records — one page per structural decision, with the cost of each |
+| [`docs/LEARNING_PATH.md`](docs/LEARNING_PATH.md) | Module → AI-engineering concept → interview question mapping, for juniors studying this repo |
+| [`docs/EXERCISES.md`](docs/EXERCISES.md) | 8 guided exercises (good-first-issue format) extending the project for real |
+| [`docs/BACKLOG_MVP_AUDITAVEL.md`](docs/BACKLOG_MVP_AUDITAVEL.md) | The senior-review backlog that drove the integrity/auditability phase |
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
