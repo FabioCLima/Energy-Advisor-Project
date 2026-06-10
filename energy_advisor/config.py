@@ -83,7 +83,10 @@ class Settings(BaseSettings):
         "data/observability/agent_traces.jsonl",
         alias="ENERGY_ADVISOR_OBSERVABILITY_TRACE_PATH",
     )
-    max_request_cost_usd: float = Field(0.01, alias="ENERGY_ADVISOR_MAX_REQUEST_COST_USD")
+    # Calibrated against measured usage_metadata costs (gpt-4o-mini): multi-tool
+    # scenarios legitimately reach ~$0.02/request. The previous $0.01 default was
+    # set against the chars/4 heuristic, which understated real cost ~1000×.
+    max_request_cost_usd: float = Field(0.05, alias="ENERGY_ADVISOR_MAX_REQUEST_COST_USD")
     max_request_latency_s: float = Field(20.0, alias="ENERGY_ADVISOR_MAX_REQUEST_LATENCY_S")
     # AUDIT: over-budget runs are flagged in traces only (observe-first rollout).
     # BLOCK: the ReAct loop is interrupted with BudgetExceeded (API → 429).
