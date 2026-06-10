@@ -5,6 +5,12 @@
 > **Público:** o autor (DS em transição para AI Engineer) e engenheiros de IA juniores
 > que usarão este repositório como fonte de estudo.
 
+> **STATUS (10/jun/2026):** EPICs A–D **concluídos e publicados** (commits
+> `342c664..2f77feb`): integridade, auditabilidade, evolução e didática. Gate de
+> avaliação verde no CI; eval completo 12/12 com `cost_source=usage_metadata`.
+> A fase atual é o **EPIC E (Profundidade)** — seção 8, criada pela reavaliação
+> pós-implementação: o gap mudou de *"promete e não faz"* para *"faz, mas raso"*.
+
 ---
 
 ## 1. Racional
@@ -365,7 +371,94 @@ que promete o que não cumpre ensina o hábito errado.
 
 ---
 
-## 7. O que este backlog deliberadamente NÃO inclui
+## 7. EPIC E — Profundidade (Fase 3, pós-reavaliação)
+
+> Origem: reavaliação sênior de 10/jun/2026, após os EPICs A–D. A barra de
+> integridade passou; estes itens são a barra seguinte, medidos contra a
+> promessa central do README ("MLE-grade evaluation and production-oriented
+> controls"). **E1–E3 são must-have**; E4–E5 são evolução documentada.
+
+### E1. Avaliação além do caminho feliz (must-have)
+
+- **Problema:** os 12 cenários testam perguntas bem-comportadas com dados
+  presentes. "MLE-grade evaluation" exige os casos que machucam — e a sessão de
+  10/jun provou o valor disso por acidente: com o banco vazio, o agente foi
+  honesto ("não consegui acessar os dados") e a trajetória reprovou. Esse
+  comportamento correto sob falha hoje não tem cenário fixo que o proteja.
+- **Mudança proposta:**
+  1. **Cenários adversariais/negativos**: pergunta fora de escopo (ex.
+     "recomende ações da bolsa"), tentativa de injection como cenário, e tool
+     falhando de propósito (fixture com DB vazio) com asserção de honestidade —
+     a resposta deve declarar a limitação, não inventar números.
+  2. **Cenários multi-turno**: a memória (C2) tem zero cobertura de eval;
+     mínimo de 2 cenários com follow-up que só faz sentido com contexto
+     ("e no fim de semana?").
+  3. **Avaliação do RAG**: medir se o documento recuperado era o relevante
+     (gabarito doc-esperado por pergunta, os 5 docs permitem isso) e checagem
+     de citação — toda dica citada deve existir no corpus.
+- **Critérios de aceitação:** novas categorias separadas no report
+  (`adversarial`, `multi_turn`, `rag`); cenário de falha de tool passa quando o
+  agente declara a limitação e reprova quando inventa números; gate do CI
+  continua quick (cenários novos rodam no full).
+- **O que o júnior aprende:** avaliar um agente é majoritariamente avaliar
+  como ele falha — o caminho feliz é a parte fácil.
+- **Esforço:** M–L
+
+### E2. Enforcement de topicalidade no AgentContract (must-have)
+
+- **Problema:** `contract.py` declara `scope` e `allowed_topics` e o README o
+  vende como "explicit, auditable scope" — mas nada verifica topicalidade.
+  Pergunta sobre criptomoedas passa pelos guardrails (não é injection, não é
+  PII) e chega ao modelo. Contrato sem check é o último resíduo da classe
+  "decorativo" que esta fase existiu para eliminar.
+- **Mudança proposta:** check de escopo determinístico (keywords/heurística
+  por domínio de energia) rodando no padrão da casa — `AUDIT` primeiro (logar
+  taxa de fora-de-escopo real), `BLOCK` depois, com mensagem que redireciona
+  ("posso ajudar com energia, consumo, solar..."). Evolução documentada:
+  classificador leve.
+- **Critérios de aceitação:** fora-de-escopo claro é detectado; perguntas de
+  energia legítimas (incluindo as 12 do eval) passam sem falso positivo;
+  violação registrada no trace com severidade própria; cenário adversarial de
+  E1 usa este check.
+- **O que o júnior aprende:** escopo é guardrail de produto, não de segurança
+  — e o rollout AUDIT→BLOCK serve para qualquer controle novo.
+- **Esforço:** M
+
+### E3. Alembic como único caminho de schema (must-have)
+
+- **Problema:** C5 entregou as migrations pela metade do ciclo: o bootstrap
+  (`db_setup`, entrypoint Docker) ainda cria schema via ORM
+  `create_tables`/`create_all`, e o Alembic existe ao lado. Hoje coincidem; na
+  primeira alteração de schema, divergem silenciosamente.
+- **Mudança proposta:** bootstrap roda `alembic upgrade head` em vez de
+  `create_all`; `create_tables` permanece apenas para os fixtures de teste
+  (documentado no docstring). Entrypoint Docker incluído.
+- **Critérios de aceitação:** ambiente novo provisiona schema exclusivamente
+  via migration; teste de smoke do container (ou do bootstrap) prova que
+  `alembic_version` existe na tabela após o boot.
+- **Esforço:** S
+
+### E4. Drift como processo agendado (evolução, não must-have)
+
+- **Problema:** o README promete "drift checks"; `drift_monitor.py` existe e é
+  testado, mas nada o executa — mesma classe de gap que o eval tinha antes do
+  B1, numa camada menos crítica.
+- **Mudança proposta:** workflow semanal (`drift.yml`, espelhando o eval.yml)
+  que roda o monitor sobre janela baseline vs atual e publica o JSON como
+  artifact; threshold violado = job amarelo/aviso, não bloqueio.
+- **Esforço:** S–M
+
+### E5. Leitor de traces (evolução, não must-have)
+
+- **Problema:** o JSONL de observabilidade acumula números reais sem
+  consumidor: nenhum resumo de custo/dia, erro, p95 de latência; sem rotação.
+  Métrica sem leitor não informa decisão nenhuma.
+- **Mudança proposta:** `python -m energy_advisor.observability.report`
+  (agregados por dia/modelo/cost_source) e/ou aba no Streamlit; rotação simples
+  por tamanho.
+- **Esforço:** M
+
+## 8. O que este backlog deliberadamente NÃO inclui
 
 Para proteger o escopo de MVP (anti-overengineering, mantendo a filosofia do projeto):
 
