@@ -13,6 +13,9 @@ on:
     types: [labeled, synchronize]
     branches: ["master", "main"]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   eval:
     # On PRs, only run when the "eval" label is present.
