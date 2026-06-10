@@ -17,7 +17,11 @@ from langchain_core.messages import AIMessage, AIMessageChunk
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.tools import tool
 
-from energy_advisor.agent import RECURSION_FALLBACK_ANSWER, EnergyAdvisorAgent
+from energy_advisor.agent import (
+    RECURSION_FALLBACK_ANSWER,
+    SCOPE_REDIRECT_ANSWER,
+    EnergyAdvisorAgent,
+)
 from energy_advisor.config import Settings
 from energy_advisor.guardrails import GuardrailViolation
 from energy_advisor.observability import BudgetExceeded
@@ -310,6 +314,66 @@ def test_stream_shares_memory_with_invoke_in_same_session(agent_settings) -> Non
     chunks = list(agent.stream("E depois?", config=cfg))
 
     assert "".join(chunks) == "Follow-up answer."
+
+
+# ── E-2: topicality enforcement ───────────────────────────────────────
+
+def test_scope_block_returns_redirect_without_invoking_model(agent_settings, trace_path, monkeypatch) -> None:
+    monkeypatch.setenv("ENERGY_ADVISOR_SCOPE_MODE", "block")
+    model = ScriptedChatModel(responses=[AIMessage(content="should never run")])
+    agent = EnergyAdvisorAgent(settings=Settings(), chat_model=model, tools=[fake_lookup])
+
+    result = agent.invoke("Me recomende ações da bolsa")
+
+    assert result["messages"][-1].content == SCOPE_REDIRECT_ANSWER
+    assert model.calls == 0  # graph (and LLM) never invoked
+    trace = read_traces(trace_path)[0]
+    assert trace["error"] == "out_of_scope"
+    assert trace["metadata"]["scope_check"] == "out_of_scope"
+
+
+def test_scope_audit_mode_answers_but_flags_trace(agent_settings, trace_path, monkeypatch) -> None:
+    monkeypatch.setenv("ENERGY_ADVISOR_SCOPE_MODE", "audit")
+    agent = make_agent([AIMessage(content="Answered anyway.")], Settings())
+
+    result = agent.invoke("Qual a receita de bolo de cenoura?")
+
+    assert result["messages"][-1].content == "Answered anyway."
+    assert read_traces(trace_path)[0]["metadata"]["scope_check"] == "out_of_scope"
+
+
+def test_scope_check_skipped_on_follow_up_turns(agent_settings, monkeypatch) -> None:
+    monkeypatch.setenv("ENERGY_ADVISOR_SCOPE_MODE", "block")
+    agent = make_agent(
+        [AIMessage(content="First answer."), AIMessage(content="Weekend answer.")],
+        Settings(),
+    )
+    cfg = {"metadata": {"session_id": "sess-scope"}}
+
+    agent.invoke("Quando carregar o carro elétrico?", config=cfg)
+    # No domain keyword — must pass because the thread's scope is established.
+    result = agent.invoke("E no fim de semana?", config=cfg)
+
+    assert result["messages"][-1].content == "Weekend answer."
+
+
+def test_scope_block_applies_to_stream(agent_settings, trace_path, monkeypatch) -> None:
+    monkeypatch.setenv("ENERGY_ADVISOR_SCOPE_MODE", "block")
+    agent = make_agent([AIMessage(content="should never run")], Settings())
+
+    chunks = list(agent.stream("Quem ganhou o jogo ontem?"))
+
+    assert chunks == [SCOPE_REDIRECT_ANSWER]
+    assert read_traces(trace_path)[0]["error"] == "out_of_scope"
+
+
+def test_in_scope_question_proceeds_in_block_mode(agent_settings, monkeypatch) -> None:
+    monkeypatch.setenv("ENERGY_ADVISOR_SCOPE_MODE", "block")
+    agent = make_agent([AIMessage(content="Tarifa atual é X.")], Settings())
+
+    result = agent.invoke("Qual a tarifa de energia agora?")
+
+    assert result["messages"][-1].content == "Tarifa atual é X."
 
 
 # ── B-3: budget enforcement ───────────────────────────────────────────

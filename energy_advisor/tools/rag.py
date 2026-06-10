@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from langchain_core.tools import tool
@@ -52,7 +53,10 @@ def search_energy_tips(query: str, max_results: int = 5) -> dict[str, Any]:
                 {
                     "rank": i + 1,
                     "content": doc.page_content,
-                    "source": (doc.metadata or {}).get("source", "unknown"),
+                    # Basename only: this is the exact token the model must cite
+                    # as `(source: <filename>)` — handing it a full path invites
+                    # citations that don't match the knowledge base contract.
+                    "source": os.path.basename((doc.metadata or {}).get("source", "unknown")),
                 }
                 for i, doc in enumerate(docs)
             ],

@@ -211,3 +211,74 @@ def test_append_eval_history_none_judge_score_is_preserved(tmp_path) -> None:
 
     entry = json.loads((tmp_path / "eval_history.jsonl").read_text().strip())
     assert entry["avg_judge_overall"] is None
+
+
+# ── E-1: behavioral checks ────────────────────────────────────────────
+
+from energy_advisor.evaluation.runner import (  # noqa: E402
+    check_limitation_statement,
+    check_rag_citations,
+    extract_citations,
+)
+
+
+def test_limitation_statement_detected_in_portuguese() -> None:
+    assert check_limitation_statement(
+        "Não consegui acessar os dados de consumo devido a um erro no banco."
+    ) is True
+
+
+def test_limitation_statement_detected_with_accents_stripped() -> None:
+    assert check_limitation_statement("Não foi possível obter os dados.") is True
+
+
+def test_confident_fabricated_answer_has_no_limitation() -> None:
+    assert check_limitation_statement(
+        "Seu home office custou R$ 142,50 nos últimos 30 dias."
+    ) is False
+
+
+def test_extract_citations_finds_source_markers() -> None:
+    answer = (
+        "Dicas:\n- Use timer (source: tip_energy_savings.txt)\n"
+        "- Modo eco (Source: tip_cost_reduction.txt)"
+    )
+    assert extract_citations(answer) == [
+        "tip_energy_savings.txt", "tip_cost_reduction.txt",
+    ]
+
+
+def test_rag_citations_pass_when_expected_doc_cited() -> None:
+    corpus = ["tip_energy_savings.txt", "tip_ev_charging.txt"]
+    result = check_rag_citations(
+        "Carregue de madrugada (source: tip_ev_charging.txt)",
+        expected_sources=["tip_ev_charging.txt"],
+        corpus=corpus,
+    )
+    assert result["expected_found"] is True
+    assert result["fabricated"] == []
+
+
+def test_rag_citations_flag_fabricated_source() -> None:
+    result = check_rag_citations(
+        "Dica (source: tip_inventado.txt)",
+        expected_sources=["tip_ev_charging.txt"],
+        corpus=["tip_ev_charging.txt"],
+    )
+    assert result["expected_found"] is False
+    assert result["fabricated"] == ["tip_inventado.txt"]
+
+
+def test_compute_summary_breaks_down_by_category() -> None:
+    summary = compute_summary([
+        {"trajectory_pass": True, "scenario_pass": True, "category": "core",
+         "error": None, "elapsed_s": 1.0, "estimated_cost_usd": 0.0,
+         "over_latency_budget": False, "over_cost_budget": False},
+        {"trajectory_pass": True, "scenario_pass": False, "category": "adversarial",
+         "error": None, "elapsed_s": 1.0, "estimated_cost_usd": 0.0,
+         "over_latency_budget": False, "over_cost_budget": False},
+    ])
+
+    assert summary["scenario_pass_rate"] == 0.5
+    assert summary["pass_by_category"]["core"] == {"passed": 1, "total": 1}
+    assert summary["pass_by_category"]["adversarial"] == {"passed": 0, "total": 1}

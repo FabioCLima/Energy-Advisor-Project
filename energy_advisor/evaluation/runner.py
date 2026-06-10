@@ -11,8 +11,11 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
+import tempfile
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -24,9 +27,11 @@ from pydantic import BaseModel, Field
 
 from ..agent import EnergyAdvisorAgent
 from ..config import Settings
+from ..contract import _normalize
+from ..guardrails import GuardrailViolation
 from ..observability import cost_from_tokens, estimate_llm_cost, extract_token_usage
 from ..prompts import SYSTEM_INSTRUCTIONS
-from .scenarios import ALL_SCENARIOS, QUICK_SCENARIOS, Scenario
+from .scenarios import FULL_SCENARIOS, QUICK_SCENARIOS, Scenario
 
 # ── Judge output schema ───────────────────────────────────────────────
 
@@ -75,6 +80,52 @@ def get_final_answer(result: dict[str, Any]) -> str:
         if isinstance(msg, AIMessage) and not msg.tool_calls:
             return msg.content
     return ""
+
+
+# ── E-1: behavioral checks (pure, unit-testable) ─────────────────────
+
+_LIMITATION_MARKERS = (
+    # PT (normalized: lowercase, accents stripped)
+    "nao consegui", "nao foi possivel", "indisponivel", "erro",
+    "limitacao", "sem dados", "nao tenho acesso", "nao ha dados",
+    # EN
+    "unable", "couldn't", "could not", "cannot", "unavailable", "no data",
+)
+
+_CITATION_RE = re.compile(r"source:\s*([\w\-.]+\.txt)", re.IGNORECASE)
+
+
+def check_limitation_statement(answer: str) -> bool:
+    """True when the answer honestly states a limitation/failure.
+
+    Keyword heuristic, documented as such: it accepts known limitation
+    phrasings rather than proving the absence of fabrication. Good enough to
+    catch the regression that matters — an answer full of confident numbers
+    after its grounding tool failed.
+    """
+    text = _normalize(answer or "")
+    return any(marker in text for marker in _LIMITATION_MARKERS)
+
+
+def extract_citations(answer: str) -> list[str]:
+    """Return knowledge-base filenames cited as `(source: <file>.txt)`."""
+    return _CITATION_RE.findall(answer or "")
+
+
+def check_rag_citations(
+    answer: str, expected_sources: list[str], corpus: list[str]
+) -> dict[str, Any]:
+    """Check citations against the gabarito and the real corpus.
+
+    - expected_found: at least one citation comes from the expected docs.
+    - fabricated: cited files that do not exist in the corpus at all.
+    """
+    cited = extract_citations(answer)
+    return {
+        "cited": cited,
+        "expected_found": any(c in expected_sources for c in cited),
+        "fabricated": [c for c in cited if c not in corpus],
+    }
 
 
 def is_ordered_subsequence(required: list[str], called: list[str]) -> bool:
@@ -137,44 +188,101 @@ def run_judge(
 
 # ── Per-scenario evaluation ───────────────────────────────────────────
 
+def _apply_env_overrides(overrides: dict[str, str]) -> dict[str, str | None]:
+    """Apply scenario env overrides, returning previous values for restore."""
+    previous: dict[str, str | None] = {}
+    for key, value in overrides.items():
+        if value == "{EMPTY_DB}":
+            value = str(Path(tempfile.mkdtemp(prefix="eval_empty_db_")) / "empty.db")
+        previous[key] = os.environ.get(key)
+        os.environ[key] = value
+    return previous
+
+
+def _restore_env(previous: dict[str, str | None]) -> None:
+    for key, value in previous.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+
+
 def evaluate_scenario(
     scenario: Scenario,
     agent: EnergyAdvisorAgent,
     settings: Settings,
     use_judge: bool,
 ) -> dict[str, Any]:
-    logger.info("Running scenario: {}", scenario.id)
+    logger.info("Running scenario: {} [{}]", scenario.id, scenario.category)
     t0 = time.time()
 
+    behavior_pass: bool | None = None
+    behavior_detail: dict[str, Any] | None = None
+
+    # Out-of-scope scenarios test the contract check deterministically —
+    # invoking the LLM would only measure the model's mood, not the control.
+    if scenario.expect_scope_flag:
+        flagged = not agent.contract.check_scope(scenario.question).passed
+        return _scenario_result(
+            scenario,
+            called_tools=[],
+            final_answer="",
+            elapsed=round(time.time() - t0, 2),
+            error=None,
+            settings=settings,
+            result=None,
+            behavior_pass=flagged,
+            behavior_detail={"scope_flagged": flagged, "llm_invoked": False},
+            judge_scores=None,
+        )
+
+    previous_env = _apply_env_overrides(scenario.env_overrides)
+    guardrail_blocked = False
+    result: dict[str, Any] | None = None
     try:
-        result = agent.invoke(scenario.question)
+        session_config = (
+            {"metadata": {"session_id": f"eval-{scenario.id}-{uuid.uuid4().hex[:8]}"}}
+            if scenario.turns
+            else None
+        )
+        result = agent.invoke(scenario.question, config=session_config)
+        # Follow-up turns share the session; the final state holds the whole
+        # thread, so tool calls and usage are extracted once at the end.
+        for turn in scenario.turns:
+            result = agent.invoke(turn, config=session_config)
         elapsed = round(time.time() - t0, 2)
         called_tools = extract_tool_calls(result)
         final_answer = get_final_answer(result)
         error = None
+    except GuardrailViolation as exc:
+        elapsed = round(time.time() - t0, 2)
+        called_tools = []
+        final_answer = ""
+        guardrail_blocked = True
+        error = None if scenario.expect_guardrail_block else str(exc)
     except Exception as exc:
         elapsed = round(time.time() - t0, 2)
         called_tools = []
         final_answer = ""
         error = str(exc)
         logger.error("Scenario {} failed: {}", scenario.id, exc)
+    finally:
+        _restore_env(previous_env)
 
-    usage = extract_token_usage(result) if not error else None
-    if usage is not None:
-        cost_estimate = cost_from_tokens(
-            settings.selected_model(), usage[0], usage[1], pricing=settings.model_pricing()
-        )
-    else:
-        cost_estimate = estimate_llm_cost(
-            settings.selected_model(), scenario.question, final_answer,
-            pricing=settings.model_pricing(),
-        )
-    trajectory = check_trajectory(scenario, called_tools)
-    over_latency_budget = elapsed > settings.max_request_latency_s
-    over_cost_budget = cost_estimate.estimated_cost_usd > settings.max_request_cost_usd
+    if scenario.expect_guardrail_block:
+        behavior_pass = guardrail_blocked
+        behavior_detail = {"guardrail_blocked": guardrail_blocked}
+    elif scenario.expect_limitation_statement:
+        behavior_pass = check_limitation_statement(final_answer)
+        behavior_detail = {"limitation_stated": behavior_pass}
+    elif scenario.expected_sources:
+        corpus = sorted(os.listdir(settings.documents_dir))
+        citations = check_rag_citations(final_answer, scenario.expected_sources, corpus)
+        behavior_pass = citations["expected_found"] and not citations["fabricated"]
+        behavior_detail = citations
 
     judge_scores: dict[str, Any] | None = None
-    if use_judge and final_answer and not error:
+    if use_judge and final_answer and not error and scenario.category != "adversarial":
         scores = run_judge(scenario.question, final_answer, scenario.judge_rubric, settings)
         if scores:
             judge_scores = {
@@ -189,24 +297,72 @@ def evaluate_scenario(
                 ),
             }
 
+    return _scenario_result(
+        scenario,
+        called_tools=called_tools,
+        final_answer=final_answer,
+        elapsed=elapsed,
+        error=error,
+        settings=settings,
+        result=result if not error else None,
+        behavior_pass=behavior_pass,
+        behavior_detail=behavior_detail,
+        judge_scores=judge_scores,
+    )
+
+
+def _scenario_result(
+    scenario: Scenario,
+    *,
+    called_tools: list[str],
+    final_answer: str,
+    elapsed: float,
+    error: str | None,
+    settings: Settings,
+    result: dict[str, Any] | None,
+    behavior_pass: bool | None,
+    behavior_detail: dict[str, Any] | None,
+    judge_scores: dict[str, Any] | None,
+) -> dict[str, Any]:
+    usage = extract_token_usage(result) if result else None
+    if usage is not None:
+        cost_estimate = cost_from_tokens(
+            settings.selected_model(), usage[0], usage[1], pricing=settings.model_pricing()
+        )
+    else:
+        cost_estimate = estimate_llm_cost(
+            settings.selected_model(), scenario.question, final_answer,
+            pricing=settings.model_pricing(),
+        )
+    trajectory = check_trajectory(scenario, called_tools)
+    # A scenario passes when its trajectory holds AND its behavioral
+    # expectation (if any) was met. behavior_pass=None means "not applicable".
+    scenario_pass = (
+        trajectory["trajectory_pass"] and behavior_pass is not False and error is None
+    )
+
     return {
         "scenario_id":     scenario.id,
         "question":        scenario.question,
         "tags":            scenario.tags,
+        "category":        scenario.category,
         "required_tools":  scenario.required_tools,
         "order_matters":   scenario.order_matters,
         "called_tools":    called_tools,
         "trajectory_pass": trajectory["trajectory_pass"],
         "order_pass":      trajectory["order_pass"],
         "missing_tools":   trajectory["missing_tools"],
+        "behavior_pass":   behavior_pass,
+        "behavior_detail": behavior_detail,
+        "scenario_pass":   scenario_pass,
         "final_answer":    final_answer,
         "elapsed_s":       elapsed,
         "input_tokens_estimate": cost_estimate.input_tokens,
         "output_tokens_estimate": cost_estimate.output_tokens,
         "estimated_cost_usd": cost_estimate.estimated_cost_usd,
         "cost_source":     cost_estimate.cost_source,
-        "over_latency_budget": over_latency_budget,
-        "over_cost_budget": over_cost_budget,
+        "over_latency_budget": elapsed > settings.max_request_latency_s,
+        "over_cost_budget": cost_estimate.estimated_cost_usd > settings.max_request_cost_usd,
         "error":           error,
         "judge_scores":    judge_scores,
     }
@@ -222,10 +378,22 @@ def compute_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
     cost_values = [r.get("estimated_cost_usd", 0.0) for r in results]
     latency_violations = sum(1 for r in results if r.get("over_latency_budget"))
     cost_violations = sum(1 for r in results if r.get("over_cost_budget"))
+    scenario_pass = sum(1 for r in results if r.get("scenario_pass", r["trajectory_pass"]))
+    by_category: dict[str, dict[str, int]] = {}
+    for r in results:
+        cat = r.get("category", "core")
+        bucket = by_category.setdefault(cat, {"passed": 0, "total": 0})
+        bucket["total"] += 1
+        if r.get("scenario_pass", r["trajectory_pass"]):
+            bucket["passed"] += 1
+
     summary: dict[str, Any] = {
         "total_scenarios":        total,
         "trajectory_pass_count":  traj_pass,
         "trajectory_pass_rate":   round(traj_pass / total, 2) if total else 0,
+        "scenario_pass_count":    scenario_pass,
+        "scenario_pass_rate":     round(scenario_pass / total, 2) if total else 0,
+        "pass_by_category":       by_category,
         "errors":                 sum(1 for r in results if r["error"]),
         "avg_elapsed_s":          round(sum(r["elapsed_s"] for r in results) / total, 2) if total else 0,
         "total_estimated_cost_usd": round(sum(cost_values), 6),
@@ -316,7 +484,7 @@ def run_evaluation(
     resolved_path = output_path or _default_output_path()
     settings = Settings()
     agent = EnergyAdvisorAgent(settings=settings)
-    scenarios = QUICK_SCENARIOS if quick else ALL_SCENARIOS
+    scenarios = QUICK_SCENARIOS if quick else FULL_SCENARIOS
 
     logger.info(
         "Starting evaluation | scenarios={} judge={} model={}",
@@ -367,6 +535,11 @@ def _print_summary(report: dict[str, Any]) -> None:
     print()
     print(f"Trajectory pass rate : {s['trajectory_pass_rate']:.0%}  "
           f"({s['trajectory_pass_count']}/{s['total_scenarios']})")
+    if "scenario_pass_rate" in s:
+        print(f"Scenario pass rate   : {s['scenario_pass_rate']:.0%}  "
+              f"({s['scenario_pass_count']}/{s['total_scenarios']})")
+    for cat, b in (s.get("pass_by_category") or {}).items():
+        print(f"  {cat:<12} {b['passed']}/{b['total']}")
 
     if "avg_judge_overall" in s:
         print()
@@ -377,10 +550,12 @@ def _print_summary(report: dict[str, Any]) -> None:
     print()
     print("Per-scenario trajectory:")
     for r in report["scenarios"]:
-        icon = "✅" if r["trajectory_pass"] else "❌"
+        icon = "✅" if r.get("scenario_pass", r["trajectory_pass"]) else "❌"
         missing = f"  missing: {r['missing_tools']}" if r["missing_tools"] else ""
         if not r.get("order_pass", True):
             missing += "  order: out-of-sequence"
+        if r.get("behavior_pass") is False:
+            missing += f"  behavior: {r.get('behavior_detail')}"
         judge_str = ""
         if r.get("judge_scores"):
             judge_str = f"  judge={r['judge_scores']['overall']:.1f}"

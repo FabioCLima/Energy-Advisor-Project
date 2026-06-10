@@ -74,6 +74,12 @@ class DatabaseManager:
         logger.debug("DatabaseManager initialised (path={})", db_path)
 
     def create_tables(self) -> None:
+        """Create all ORM tables directly (no migration history).
+
+        Test fixtures only. Application bootstrap provisions schema via
+        Alembic (`bootstrap.db_setup.run_migrations`) — the single source of
+        truth for schema in real environments.
+        """
         Base.metadata.create_all(bind=self.engine)
         logger.info("Database tables created at {}", self.db_path)
 

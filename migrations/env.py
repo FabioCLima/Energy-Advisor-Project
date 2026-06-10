@@ -16,6 +16,11 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
+    # Programmatic runs (bootstrap) pass the URL via config attributes;
+    # CLI runs fall back to the same env var the application uses.
+    explicit = context.config.attributes.get("db_url")
+    if explicit:
+        return explicit
     db_path = os.environ.get("ENERGY_ADVISOR_DB_PATH", "data/energy_data.db")
     return f"sqlite:///{db_path}"
 

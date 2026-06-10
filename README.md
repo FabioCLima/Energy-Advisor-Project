@@ -4,7 +4,7 @@
 ![LangGraph](https://img.shields.io/badge/LangGraph-ReAct_Agent-6B48FF?logo=chainlink&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?logo=streamlit&logoColor=white)
 ![Open-Meteo](https://img.shields.io/badge/Open--Meteo-Real_Weather-4CAF50?logo=cloudflarepages&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-205_passed-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-243_passed-brightgreen?logo=pytest&logoColor=white)
 ![Coverage](https://img.shields.io/badge/Coverage-81%25-brightgreen?logo=pytest&logoColor=white)
 ![CI](https://github.com/FabioCLima/Energy-Advisor-Project/actions/workflows/ci.yml/badge.svg?branch=master)
 ![Docker](https://img.shields.io/badge/GHCR-ghcr.io%2Ffabiolima%2Fenergy--advisor-2496ED?logo=docker&logoColor=white)
@@ -65,11 +65,11 @@ That framing matters for recruiters and interviewers: the project demonstrates t
 |---|---|---|
 | Product surface | Streamlit dashboard + chat | Dedicated frontend, auth, user accounts |
 | Agent service | FastAPI + LangGraph ReAct agent | Multi-tenant API, rate limits, service mesh |
-| Model/agent evaluation | Scenario harness with ordered tool-trajectory checks, optional LLM-as-judge, CI eval gate (`eval.yml`: label-triggered on PRs + weekly), reports versioned by prompt/contract hash + git commit | Larger benchmark sets, human review workflows |
+| Model/agent evaluation | 18 scenarios in 4 categories (core, **adversarial**, multi-turn, RAG-gabarito) with ordered tool-trajectory + behavioral checks, optional LLM-as-judge, CI eval gate (`eval.yml`), reports versioned by prompt/contract hash + git commit | Larger benchmark sets, human review workflows |
 | Observability | Local JSONL traces with tools, latency, tokens/cost, session_id correlation, and per-tool-call args + response size — recorded on both `invoke` and `stream` paths | LangSmith/OpenTelemetry traces, Prometheus/Grafana, CloudWatch alarms |
 | Cost control | Real token counts from provider `usage_metadata` (covering every ReAct iteration), with labelled chars/4 heuristic fallback (`cost_source` field); budget enforcement with AUDIT/BLOCK rollout (`ENERGY_ADVISOR_BUDGET_MODE` — BLOCK interrupts the loop mid-run, API returns 429) | Model routing, cache policy, org-level cost dashboards |
 | Drift monitoring | Offline baseline vs current window checks for energy data and forecast error | Scheduled Evidently/MLflow jobs, retraining triggers, model registry governance |
-| Guardrails | Severity-tiered checks (low→critical): bilingual (EN + PT-BR) prompt-injection patterns, secret leakage, Brazilian PII/LGPD (CPF, CNPJ, phone, e-mail); AUDIT/BLOCK mode configurable via env var; output validation applied to **both** `invoke` and token streaming (incremental check per chunk) | Classifier/moderation-based detection, policy engine, red-team suites |
+| Guardrails | Severity-tiered checks (low→critical): bilingual (EN + PT-BR) prompt-injection patterns, secret leakage, Brazilian PII/LGPD (CPF, CNPJ, phone, e-mail); contract **topicality enforcement** (`ENERGY_ADVISOR_SCOPE_MODE`: AUDIT flags out-of-scope questions, BLOCK redirects without spending tokens); output validation applied to **both** `invoke` and token streaming | Classifier/moderation-based detection, policy engine, red-team suites |
 | Deployment | Docker, Streamlit Cloud path, AWS App Runner path | IaC, blue/green deploys, autoscaling, secrets manager, VPC controls |
 
 ### How MLE and AI Engineer converge here
@@ -264,9 +264,16 @@ Device profiles use `prob_fn: Callable[[datetime], float]` encoding domain knowl
 
 ## Evaluation
 
-The agent is evaluated in two independent dimensions:
+The agent is evaluated across **18 scenarios in four categories** — because evaluating an agent is mostly evaluating how it fails, not just how it succeeds:
 
-**Trajectory evaluation** — each scenario defines the tools the agent must call to produce a grounded answer, checked in two independent dimensions reported separately: **membership** (every required tool was called) and **order** (required tools appear as an ordered subsequence of the actual calls, allowing interleaving). Scenarios where the grounding tools are independent declare `order_matters=False`. Responses that bypass tool calls fail automatically — even if the answer looks correct.
+| Category | Scenarios | What it proves |
+|---|---|---|
+| `core` | 11 | Grounded answers on the happy path |
+| `adversarial` | 3 | Out-of-scope flagged by the contract (no LLM call), PT-BR prompt injection blocked, and **honesty under tool failure** (empty DB → the answer must state the limitation, not fabricate numbers) |
+| `multi_turn` | 2 | Follow-ups keep context through the session thread ("e no fim de semana?") |
+| `rag` | 2 | Citations match a per-question gabarito (expected source file) and never reference files outside the corpus |
+
+**Trajectory evaluation** — each scenario defines the tools the agent must call, checked in two dimensions reported separately: **membership** (every required tool was called) and **order** (required tools appear as an ordered subsequence of the actual calls, allowing interleaving). Scenarios where the grounding tools are independent declare `order_matters=False`. Behavioral expectations (guardrail blocks, limitation statements, citation gabarito) are reported as `behavior_pass`; a scenario passes only when both hold.
 
 **LLM-as-judge** — a separate LLM scores the final response on four criteria with rubric:
 1. **Grounding** — numbers in the response are traceable to tool output
@@ -342,7 +349,7 @@ Known limitation: the model forecasts recursively, so error accumulates with lon
 | Dashboard | Streamlit + Plotly |
 | Logging | Loguru (structured) + LangSmith (optional tracing) |
 | Container | Docker + Docker Compose · single image with `streamlit` / `api` runtime modes |
-| Tests | pytest · 205 tests · 81% coverage (incl. agent graph tests with injected fake model — no API key needed) |
+| Tests | pytest · 243 tests · 81% coverage (incl. agent graph tests with injected fake model — no API key needed) |
 | Linting | Ruff |
 
 ---
@@ -377,7 +384,7 @@ Energy-Advisor-Project/
 │       ├── recommendations.py    ← Savings calculation engine
 │       ├── retrieval.py          ← ChromaDB RAG pipeline
 │       └── usage_forecasting_ml.py ← HistGradientBoostingRegressor + evaluation
-├── tests/                        ← 205 unit tests (81% coverage)
+├── tests/                        ← 243 unit tests (81% coverage)
 ├── data/
 │   ├── documents/                ← RAG knowledge base (5 docs)
 │   ├── energy_data.db            ← SQLite (generated on first run)

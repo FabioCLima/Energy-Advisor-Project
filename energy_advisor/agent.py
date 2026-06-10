@@ -54,6 +54,14 @@ RECURSION_FALLBACK_ANSWER = (
     "ou dispositivo específico)."
 )
 
+# Friendly redirect when the contract's topicality check blocks a question.
+SCOPE_REDIRECT_ANSWER = (
+    "Eu sou o assistente de energia da EcoHome — posso ajudar com consumo, "
+    "geração solar, carregamento do EV, tarifas, previsão e economia de "
+    "energia da sua casa. Sobre esse assunto eu não consigo ajudar. "
+    "Quer saber, por exemplo, qual o melhor horário para carregar o carro hoje?"
+)
+
 
 class AgentState(TypedDict):
     """LangGraph state schema (contract): message history only."""
@@ -222,11 +230,12 @@ class EnergyAdvisorAgent:
         *,
         request_id: str,
         session_id: str | None,
-    ) -> tuple[dict[str, Any], RunnableConfig]:
+    ) -> tuple[dict[str, Any], RunnableConfig, bool]:
         """Resolve checkpointer thread and graph input for this turn.
 
         First turn of a thread gets the full system context; follow-up turns
         send only the new question — the checkpointer already holds the history.
+        Returns (graph_input, config, has_history).
         """
         cfg = self._runtime_config(config)
         configurable = dict(cfg.get("configurable") or {})
@@ -242,7 +251,30 @@ class EnergyAdvisorAgent:
             messages.append(HumanMessage(content=question))
         else:
             messages = self._build_messages(question, context)
-        return {"messages": messages}, cfg
+        return {"messages": messages}, cfg, has_history
+
+    def _check_scope_first_turn(
+        self, question: str, has_history: bool, metadata: dict[str, Any]
+    ) -> bool:
+        """Run the contract topicality check on the first turn of a thread.
+
+        Follow-up turns skip it: "e no fim de semana?" carries no domain
+        keyword by nature — the conversation's scope was established on turn 1.
+
+        Returns True when the question should be answered with the scope
+        redirect instead of invoking the graph (BLOCK mode only). In AUDIT
+        mode the violation is logged and flagged in trace metadata.
+        """
+        if has_history:
+            return False
+        result = self.contract.check_scope(question)
+        if result.passed:
+            return False
+        metadata["scope_check"] = "out_of_scope"
+        if self.contract.scope_mode == GuardrailMode.BLOCK:
+            return True
+        logger.warning("Scope audit — out-of-scope question: {}", question[:80])
+        return False
 
     def invoke(
         self,
@@ -259,9 +291,21 @@ class EnergyAdvisorAgent:
         t0 = time.perf_counter()
         try:
             ensure_safe_user_input(question, mode=self.contract.enforcement_mode)
-            graph_input, cfg = self._thread_input_and_config(
+            graph_input, cfg, has_history = self._thread_input_and_config(
                 question, context, config, request_id=request_id, session_id=session_id
             )
+            if self._check_scope_first_turn(question, has_history, metadata):
+                result = {"messages": [AIMessage(content=SCOPE_REDIRECT_ANSWER)]}
+                self._record_trace(
+                    question=question,
+                    result=result,
+                    latency_s=time.perf_counter() - t0,
+                    request_id=request_id,
+                    session_id=session_id,
+                    metadata=metadata,
+                    error="out_of_scope",
+                )
+                return result
             result = self.graph.invoke(graph_input, config=cfg)
         except GraphRecursionError:
             elapsed = time.perf_counter() - t0
@@ -371,9 +415,21 @@ class EnergyAdvisorAgent:
                 return
             raise GuardrailViolation(check.reason or "Unsafe output rejected.")
 
-        graph_input, cfg = self._thread_input_and_config(
+        graph_input, cfg, has_history = self._thread_input_and_config(
             question, context, config, request_id=request_id, session_id=session_id
         )
+        if self._check_scope_first_turn(question, has_history, metadata):
+            self._record_trace(
+                question=question,
+                result={"messages": [AIMessage(content=SCOPE_REDIRECT_ANSWER)]},
+                latency_s=time.perf_counter() - t0,
+                request_id=request_id,
+                session_id=session_id,
+                metadata=metadata,
+                error="out_of_scope",
+            )
+            yield SCOPE_REDIRECT_ANSWER
+            return
         try:
             for mode, payload in self.graph.stream(  # type: ignore[misc]
                 graph_input,

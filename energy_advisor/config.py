@@ -64,6 +64,9 @@ class Settings(BaseSettings):
 
     # ── Guardrails ───────────────────────────────────────────────────
     guardrail_mode: GuardrailMode = Field(GuardrailMode.BLOCK, alias="ENERGY_ADVISOR_GUARDRAIL_MODE")
+    # Topicality (AgentContract.check_scope): AUDIT logs out-of-scope questions,
+    # BLOCK answers them with a friendly redirect. Observe-first default.
+    scope_mode: GuardrailMode = Field(GuardrailMode.AUDIT, alias="ENERGY_ADVISOR_SCOPE_MODE")
 
     # ── API surface ──────────────────────────────────────────────────
     # When set, every /advisor/* request must send X-API-Key with this value.

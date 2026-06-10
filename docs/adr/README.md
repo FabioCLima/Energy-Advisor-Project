@@ -16,3 +16,4 @@ maximum. A junior reading the codebase should be able to distinguish
 | [ADR-007](adr-007-streaming-under-same-controls.md) | Streaming under the same controls as invoke |
 | [ADR-008](adr-008-conversation-memory-checkpointer.md) | Conversation memory via LangGraph checkpointer |
 | [ADR-009](adr-009-no-prices-in-prompt.md) | No tariff values in the system prompt |
+| [ADR-010](adr-010-topicality-enforcement.md) | Topicality enforcement in the AgentContract |

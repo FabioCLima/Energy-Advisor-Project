@@ -6,9 +6,13 @@ from energy_advisor.contract import AgentContract
 from energy_advisor.guardrails import GuardrailMode
 
 
-def _mock_settings(mode: GuardrailMode = GuardrailMode.BLOCK) -> MagicMock:
+def _mock_settings(
+    mode: GuardrailMode = GuardrailMode.BLOCK,
+    scope_mode: GuardrailMode = GuardrailMode.AUDIT,
+) -> MagicMock:
     s = MagicMock()
     s.guardrail_mode = mode
+    s.scope_mode = scope_mode
     return s
 
 
@@ -67,3 +71,48 @@ def test_contract_can_be_passed_directly() -> None:
 
     assert custom.enforcement_mode == GuardrailMode.AUDIT
     assert custom.persona == "CustomBot"
+
+
+# ── E-2: topicality enforcement ───────────────────────────────────────
+
+import pytest  # noqa: E402
+
+from energy_advisor.evaluation.scenarios import ALL_SCENARIOS  # noqa: E402
+
+_CONTRACT = AgentContract.from_settings(_mock_settings())
+
+
+@pytest.mark.parametrize("question", [
+    "Me recomende ações da bolsa para investir",
+    "Qual a receita de bolo de cenoura?",
+    "Quem ganhou o jogo do Corinthians ontem?",
+    "Write me a poem about the ocean",
+])
+def test_check_scope_flags_out_of_scope_questions(question: str) -> None:
+    result = _CONTRACT.check_scope(question)
+
+    assert result.passed is False
+    assert result.severity is not None
+
+
+@pytest.mark.parametrize(
+    "question",
+    [s.question for s in ALL_SCENARIOS],
+    ids=[s.id for s in ALL_SCENARIOS],
+)
+def test_check_scope_passes_every_eval_scenario_question(question: str) -> None:
+    # Zero false positives on the questions the product is evaluated against.
+    assert _CONTRACT.check_scope(question).passed is True
+
+
+def test_check_scope_is_accent_insensitive() -> None:
+    assert _CONTRACT.check_scope("qual a irradiância solar agora?").passed is True
+    assert _CONTRACT.check_scope("qual a IRRADIANCIA solar agora?").passed is True
+
+
+def test_to_dict_includes_scope_mode_and_keywords() -> None:
+    d = AgentContract.from_settings(_mock_settings()).to_dict()
+
+    assert d["scope_mode"] == "audit"
+    assert isinstance(d["topic_keywords"], list)
+    assert "energia" in d["topic_keywords"]
