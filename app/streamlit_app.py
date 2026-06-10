@@ -32,6 +32,7 @@ from app.components.charts import (
     render_top_consumers,
 )
 from app.components.chat import render_chat
+from app.components.operations import render_operations
 from energy_advisor.bootstrap.runtime import ensure_demo_assets
 from energy_advisor.config import Settings
 from energy_advisor.services.pricing import generate_time_of_use_prices
@@ -101,7 +102,9 @@ with st.sidebar:
     st.caption("v0.3.0 · main")
 
 # ── Main tabs ─────────────────────────────────────────────────────────
-tab_dash, tab_chat = st.tabs(["📊 Dashboard", "💬 Ask the Advisor"])
+tab_dash, tab_chat, tab_ops = st.tabs(
+    ["📊 Dashboard", "💬 Ask the Advisor", "🔧 Operations"]
+)
 
 # ── Dashboard tab ─────────────────────────────────────────────────────
 with tab_dash:
@@ -207,3 +210,8 @@ with tab_chat:
     st.header("Ask the Energy Advisor")
     st.caption("ReAct agent with access to consumption data, solar generation, rates, and knowledge base.")
     render_chat()
+
+# ── Operations tab ────────────────────────────────────────────────────
+with tab_ops:
+    st.header("Agent Operations")
+    render_operations()

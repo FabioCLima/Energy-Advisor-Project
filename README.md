@@ -362,7 +362,8 @@ Energy-Advisor-Project/
 │   ├── streamlit_app.py          ← UI entrypoint
 │   └── components/
 │       ├── charts.py             ← Plotly chart functions
-│       └── chat.py               ← Chat tab + agent calls
+│       ├── chat.py               ← Chat tab + agent calls
+│       └── operations.py         ← Operations tab (agent telemetry from local traces)
 ├── energy_advisor/
 │   ├── agent.py                  ← LangGraph ReAct graph
 │   ├── config.py                 ← Pydantic-settings (env vars + guardrail mode)
@@ -437,3 +438,7 @@ pytest tests/ -v
 | Home Office Cost | PC + Monitor + AC office; monthly and annual projections |
 
 The "Insight of the Day" card (top of dashboard) combines the current energy rate period, real-time irradiance from Open-Meteo, and the cheapest upcoming window — all pre-computed, no agent call required.
+
+### Operations tab
+
+The **🔧 Operations** tab renders the agent's own telemetry from the local JSONL traces — the same aggregation as `python -m energy_advisor.observability.report`: requests and cost per day, success rate, avg/p95 latency, budget flags, out-of-scope count, cost provenance (`usage_metadata` vs heuristic), error breakdown, tool usage, and a raw drill-down of the last 20 traces. Every question asked in the chat tab shows up here seconds later — observability you can demo.
