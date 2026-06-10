@@ -33,7 +33,15 @@ from .guardrails import (
     validate_model_output,
 )
 from .logging import configure_logging
-from .observability import TraceRecorder, build_agent_trace, extract_final_answer, new_request_id
+from .observability import (
+    BudgetExceeded,
+    TraceRecorder,
+    build_agent_trace,
+    cost_from_tokens,
+    extract_final_answer,
+    extract_token_usage,
+    new_request_id,
+)
 from .prompts import SYSTEM_INSTRUCTIONS
 from .tools import TOOL_KIT
 
@@ -132,6 +140,7 @@ class EnergyAdvisorAgent:
 
         def assistant_node(state: AgentState) -> dict[str, Any]:
             response = llm_with_tools.invoke(state["messages"])
+            self._enforce_cost_budget([*state["messages"], response])
             return {"messages": [response]}
 
         tools_node = ToolNode(self._tools)
@@ -165,6 +174,29 @@ class EnergyAdvisorAgent:
             messages.append(SystemMessage(content=context))
         messages.append(HumanMessage(content=question))
         return messages
+
+    def _enforce_cost_budget(self, messages: list[BaseMessage]) -> None:
+        """Interrupt the ReAct loop when accumulated cost crosses the budget.
+
+        Checked after every LLM response — the point where a run can still be
+        stopped before spending more. Requires provider usage_metadata; without
+        it (heuristics only) enforcement would punish estimation error, so the
+        check is skipped and over_cost_budget remains a post-hoc trace flag.
+        """
+        if self.settings.budget_mode != GuardrailMode.BLOCK:
+            return
+        usage = extract_token_usage({"messages": messages})
+        if usage is None:
+            return
+        cost = cost_from_tokens(
+            self._selected_model, usage[0], usage[1], pricing=self.settings.model_pricing()
+        )
+        if cost.estimated_cost_usd > self.settings.max_request_cost_usd:
+            raise BudgetExceeded(
+                f"Request budget exceeded: estimated ${cost.estimated_cost_usd:.6f} "
+                f"> limit ${self.settings.max_request_cost_usd:.6f} "
+                f"({usage[0]} input + {usage[1]} output tokens)."
+            )
 
     def _runtime_config(self, config: RunnableConfig | None) -> RunnableConfig:
         """Merge caller config with the explicit ReAct iteration cap.

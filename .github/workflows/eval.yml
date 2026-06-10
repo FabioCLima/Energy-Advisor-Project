@@ -1,0 +1,89 @@
+# Agent evaluation gate.
+#
+# Cost note: quick mode runs 4 scenarios against gpt-4o-mini without the
+# LLM judge — roughly $0.01–0.05 per run. That is why it runs on demand
+# (workflow_dispatch / PR label "eval") and weekly, not on every push.
+name: Eval Gate
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * 1" # Mondays 09:00 UTC
+  pull_request:
+    types: [labeled, synchronize]
+    branches: ["master", "main"]
+
+jobs:
+  eval:
+    # On PRs, only run when the "eval" label is present.
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'eval')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv pip install -r requirements.txt --system
+
+      - name: Bootstrap demo data
+        run: |
+          python -m energy_advisor.bootstrap.db_setup
+          python -m energy_advisor.bootstrap.sample_data
+        env:
+          OPENAI_API_KEY: not-needed-for-bootstrap
+
+      - name: Run evaluation (quick, trajectory only)
+        run: |
+          python -m energy_advisor.evaluation.runner \
+            --quick --no-judge --output eval_report_ci.json
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Gate — fail on trajectory regression or execution errors
+        run: |
+          python - <<'EOF'
+          import json, os, sys
+
+          report = json.load(open("eval_report_ci.json"))
+          s = report["summary"]
+          failures = []
+          if s["trajectory_pass_rate"] < 1.0:
+              failures.append(f"trajectory_pass_rate={s['trajectory_pass_rate']} (< 1.0)")
+          if s["errors"] > 0:
+              failures.append(f"errors={s['errors']}")
+
+          lines = [
+              "## Eval Gate",
+              f"- model: `{report['model']}`",
+              f"- prompt_hash: `{report['versions']['prompt_hash']}`",
+              f"- scenarios: {s['total_scenarios']}",
+              f"- trajectory pass rate: {s['trajectory_pass_rate']:.0%}",
+              f"- errors: {s['errors']}",
+              f"- avg latency: {s['avg_elapsed_s']}s",
+              f"- est. cost: ${s['total_estimated_cost_usd']:.6f}",
+              f"- result: {'❌ FAIL — ' + '; '.join(failures) if failures else '✅ PASS'}",
+          ]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+              fh.write("\n".join(lines) + "\n")
+
+          if failures:
+              print("Eval gate FAILED:", "; ".join(failures))
+              sys.exit(1)
+          print("Eval gate passed.")
+          EOF
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval_report_ci.json

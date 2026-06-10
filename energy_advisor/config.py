@@ -53,6 +53,9 @@ class Settings(BaseSettings):
         alias="ENERGY_ADVISOR_ANEEL_CACHE_PATH",
     )
     aneel_fetch_enabled: bool = Field(True, alias="ENERGY_ADVISOR_ANEEL_FETCH_ENABLED")
+    # Escape hatch for the ANEEL open-data endpoint, whose certificate chain is
+    # intermittently broken. Affects only that fetch (never the LLM API), and the
+    # client falls back to cached/bundled rates when disabled — prefer the default.
     aneel_allow_insecure_ssl: bool = Field(False, alias="ENERGY_ADVISOR_ANEEL_ALLOW_INSECURE_SSL")
 
     # ── Forecasting / ML ─────────────────────────────────────────────
@@ -61,6 +64,17 @@ class Settings(BaseSettings):
 
     # ── Guardrails ───────────────────────────────────────────────────
     guardrail_mode: GuardrailMode = Field(GuardrailMode.BLOCK, alias="ENERGY_ADVISOR_GUARDRAIL_MODE")
+
+    # ── API surface ──────────────────────────────────────────────────
+    # When set, every /advisor/* request must send X-API-Key with this value.
+    api_auth_key: str | None = Field(None, alias="ENERGY_ADVISOR_API_AUTH_KEY")
+    # 0 disables. In-memory sliding window per client IP — per instance only;
+    # a multi-replica deployment needs a shared store (e.g. Redis).
+    rate_limit_per_minute: int = Field(0, alias="ENERGY_ADVISOR_RATE_LIMIT_PER_MINUTE")
+    # Comma-separated allowed origins; "*" is a demo default, not a production one.
+    cors_origins: str = Field("*", alias="ENERGY_ADVISOR_CORS_ORIGINS")
+    # Provision demo assets (DB, sample data, ML artifacts) at API startup.
+    bootstrap_on_start: bool = Field(True, alias="ENERGY_ADVISOR_BOOTSTRAP_ON_START")
 
     # ── Observability ────────────────────────────────────────────────
     log_level: str = Field("INFO", alias="LOG_LEVEL")
@@ -71,6 +85,10 @@ class Settings(BaseSettings):
     )
     max_request_cost_usd: float = Field(0.01, alias="ENERGY_ADVISOR_MAX_REQUEST_COST_USD")
     max_request_latency_s: float = Field(20.0, alias="ENERGY_ADVISOR_MAX_REQUEST_LATENCY_S")
+    # AUDIT: over-budget runs are flagged in traces only (observe-first rollout).
+    # BLOCK: the ReAct loop is interrupted with BudgetExceeded (API → 429).
+    # Latency stays flag-only: a request can't be un-spent, but it can be un-continued.
+    budget_mode: GuardrailMode = Field(GuardrailMode.AUDIT, alias="ENERGY_ADVISOR_BUDGET_MODE")
     # JSON mapping model name → [input_usd_per_1k, output_usd_per_1k], merged over defaults.
     model_pricing_json: str | None = Field(None, alias="ENERGY_ADVISOR_MODEL_PRICING_JSON")
 

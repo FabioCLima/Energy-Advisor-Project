@@ -6,11 +6,49 @@ import re
 from energy_advisor.evaluation.runner import (
     _append_eval_history,
     _default_output_path,
+    artifact_versions,
     check_trajectory,
     compute_summary,
     is_ordered_subsequence,
 )
 from energy_advisor.evaluation.scenarios import Scenario
+
+# ── B-2: prompt/contract versioning ──────────────────────────────────
+
+def test_artifact_versions_changes_with_prompt() -> None:
+    contract = {"scope": "x", "enforcement_mode": "block"}
+
+    v1 = artifact_versions("prompt one", contract)
+    v2 = artifact_versions("prompt two", contract)
+
+    assert v1["prompt_hash"] != v2["prompt_hash"]
+    assert v1["contract_hash"] == v2["contract_hash"]
+
+
+def test_artifact_versions_changes_with_contract() -> None:
+    v1 = artifact_versions("same prompt", {"enforcement_mode": "block"})
+    v2 = artifact_versions("same prompt", {"enforcement_mode": "audit"})
+
+    assert v1["contract_hash"] != v2["contract_hash"]
+    assert v1["contract"] == {"enforcement_mode": "block"}
+
+
+def test_eval_history_carries_version_fields(tmp_path) -> None:
+    history_path = str(tmp_path / "eval_history.jsonl")
+    summary = {"total_scenarios": 4, "trajectory_pass_rate": 1.0}
+    report = {
+        "generated_at": "2026-06-10T10:00:00",
+        "model": "gpt-4o-mini",
+        "quick_mode": True,
+        "versions": {"prompt_hash": "abc123", "contract_hash": "def456", "git_commit": "f00ba4"},
+    }
+
+    _append_eval_history(summary, report, "run.json", history_path)
+
+    entry = json.loads((tmp_path / "eval_history.jsonl").read_text().strip())
+    assert entry["prompt_hash"] == "abc123"
+    assert entry["contract_hash"] == "def456"
+    assert entry["git_commit"] == "f00ba4"
 
 
 def _scenario(required: list[str], order_matters: bool = True) -> Scenario:

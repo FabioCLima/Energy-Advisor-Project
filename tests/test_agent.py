@@ -20,6 +20,7 @@ from langchain_core.tools import tool
 from energy_advisor.agent import RECURSION_FALLBACK_ANSWER, EnergyAdvisorAgent
 from energy_advisor.config import Settings
 from energy_advisor.guardrails import GuardrailViolation
+from energy_advisor.observability import BudgetExceeded
 
 # ── Scripted fake model ───────────────────────────────────────────────
 
@@ -264,3 +265,48 @@ def test_stream_audit_mode_logs_but_does_not_block(agent_settings, trace_path, m
 
     assert "123.456.789-09" in "".join(chunks)
     assert read_traces(trace_path)[0]["success"] is True
+
+
+# ── B-3: budget enforcement ───────────────────────────────────────────
+
+EXPENSIVE_ANSWER = AIMessage(
+    content="Expensive answer.",
+    usage_metadata={"input_tokens": 500_000, "output_tokens": 100_000, "total_tokens": 600_000},
+)
+
+
+def test_budget_block_mode_interrupts_run(agent_settings, trace_path, monkeypatch) -> None:
+    monkeypatch.setenv("ENERGY_ADVISOR_BUDGET_MODE", "block")
+    monkeypatch.setenv("ENERGY_ADVISOR_MAX_REQUEST_COST_USD", "0.01")
+    agent = make_agent([EXPENSIVE_ANSWER], Settings())
+
+    with pytest.raises(BudgetExceeded):
+        agent.invoke("Pergunta cara")
+
+    traces = read_traces(trace_path)
+    assert traces[0]["success"] is False
+    assert "budget" in traces[0]["error"].lower()
+
+
+def test_budget_audit_mode_only_flags(agent_settings, trace_path, monkeypatch) -> None:
+    monkeypatch.setenv("ENERGY_ADVISOR_BUDGET_MODE", "audit")
+    monkeypatch.setenv("ENERGY_ADVISOR_MAX_REQUEST_COST_USD", "0.01")
+    agent = make_agent([EXPENSIVE_ANSWER], Settings())
+
+    result = agent.invoke("Pergunta cara")
+
+    assert result["messages"][-1].content == "Expensive answer."
+    trace = read_traces(trace_path)[0]
+    assert trace["success"] is True
+    assert trace["over_cost_budget"] is True
+
+
+def test_budget_block_skipped_without_usage_metadata(agent_settings, monkeypatch) -> None:
+    # Heuristic-only runs are never blocked: enforcement would punish estimation error.
+    monkeypatch.setenv("ENERGY_ADVISOR_BUDGET_MODE", "block")
+    monkeypatch.setenv("ENERGY_ADVISOR_MAX_REQUEST_COST_USD", "0.0000001")
+    agent = make_agent([AIMessage(content="Plain answer.")], Settings())
+
+    result = agent.invoke("Pergunta")
+
+    assert result["messages"][-1].content == "Plain answer."

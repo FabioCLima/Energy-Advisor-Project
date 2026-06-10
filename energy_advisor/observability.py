@@ -21,6 +21,14 @@ _MODEL_PRICING_USD_PER_1K_TOKENS: dict[str, tuple[float, float]] = {
 }
 
 
+class BudgetExceeded(RuntimeError):
+    """Raised mid-run when accumulated LLM cost crosses the request budget.
+
+    Operational counterpart of GuardrailViolation: same AUDIT/BLOCK rollout
+    pattern, but protecting cost instead of content. The API maps it to 429.
+    """
+
+
 @dataclass(frozen=True)
 class ToolCallRecord:
     """One tool invocation captured from LangGraph message history."""

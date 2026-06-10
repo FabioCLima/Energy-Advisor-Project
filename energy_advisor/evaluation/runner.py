@@ -8,7 +8,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
+import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +25,7 @@ from pydantic import BaseModel, Field
 from ..agent import EnergyAdvisorAgent
 from ..config import Settings
 from ..observability import cost_from_tokens, estimate_llm_cost, extract_token_usage
+from ..prompts import SYSTEM_INSTRUCTIONS
 from .scenarios import ALL_SCENARIOS, QUICK_SCENARIOS, Scenario
 
 # ── Judge output schema ───────────────────────────────────────────────
@@ -242,6 +246,35 @@ def compute_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
+def artifact_versions(instructions: str, contract_dict: dict[str, Any]) -> dict[str, Any]:
+    """Identify the prompt + contract + commit that produced an eval report.
+
+    Without these, two entries in eval_history.jsonl are not comparable — the
+    system prompt may have changed between runs. Reproducibility for LLM
+    systems means versioning the trio (model, prompt, eval data), not just code.
+    """
+    prompt_hash = hashlib.sha256(instructions.encode("utf-8")).hexdigest()[:12]
+    contract_hash = hashlib.sha256(
+        json.dumps(contract_dict, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()[:12]
+    commit = os.environ.get("GITHUB_SHA")
+    if not commit:
+        try:
+            commit = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+        except Exception:
+            commit = None
+    return {
+        "prompt_hash": prompt_hash,
+        "contract_hash": contract_hash,
+        "contract": contract_dict,
+        "git_commit": commit,
+    }
+
+
 def _default_output_path() -> str:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"eval_report_{ts}.json"
@@ -253,6 +286,7 @@ def _append_eval_history(
     report_file: str,
     history_path: str,
 ) -> None:
+    versions = report.get("versions", {})
     entry = {
         "generated_at": report["generated_at"],
         "model": report["model"],
@@ -261,6 +295,9 @@ def _append_eval_history(
         "trajectory_pass_rate": summary["trajectory_pass_rate"],
         "avg_judge_overall": summary.get("avg_judge_overall"),
         "report_file": report_file,
+        "prompt_hash": versions.get("prompt_hash"),
+        "contract_hash": versions.get("contract_hash"),
+        "git_commit": versions.get("git_commit"),
     }
     path = Path(history_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -299,6 +336,7 @@ def run_evaluation(
         "model":        settings.selected_model(),
         "judge_model":  settings.model_quality if use_judge else None,
         "quick_mode":   quick,
+        "versions":     artifact_versions(SYSTEM_INSTRUCTIONS, agent.contract.to_dict()),
         "summary":      summary,
         "scenarios":    results,
     }
