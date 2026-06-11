@@ -220,3 +220,5 @@ docs/
 # Eval reports are run artifacts, not source — one curated sample lives in
 # docs/examples/eval_report_sample.json (tracked with -f).
 eval_report*.json
+
+.claude/
